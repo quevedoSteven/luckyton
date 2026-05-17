@@ -1,0 +1,144 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id              String    @id @default(uuid())
+  walletAddress   String    @unique
+  username        String?
+  avatar          String?
+  balance         Decimal   @default(0) @db.Decimal(15, 9)
+  totalGames      Int       @default(0)
+  totalWins       Int       @default(0)
+  totalLosses     Int       @default(0)
+  winStreak       Int       @default(0)
+  bestWinStreak   Int       @default(0)
+  level           Int       @default(1)
+  xp              Int       @default(0)
+  isPremium       Boolean   @default(false)
+  premiumExpiry   DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  transactions    Transaction[]
+  achievements    UserAchievement[]
+  gamePlayers     GamePlayer[]
+
+  @@index([walletAddress])
+  @@index([isPremium])
+}
+
+model Game {
+  id              String    @id @default(uuid())
+  type            GameType
+  status          GameStatus @default(waiting)
+  betAmount       Decimal   @db.Decimal(15, 9)
+  houseFee        Decimal   @db.Decimal(15, 9)
+  pot             Decimal   @db.Decimal(15, 9)
+  winnerId        String?
+  result          Json?
+  serverSeedHash  String
+  clientSeed      String
+  nonce           Int
+  revealedSeed    String?
+  createdAt       DateTime  @default(now())
+  startedAt       DateTime?
+  finishedAt      DateTime?
+
+  players         GamePlayer[]
+
+  @@index([type])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model GamePlayer {
+  id                String  @id @default(uuid())
+  gameId            String
+  userId            String
+  walletAddress     String
+  choice            String?
+  roll              Int?
+  guess             Int?
+  cashedOut         Boolean @default(false)
+  cashOutMultiplier Decimal? @db.Decimal(10, 2)
+  isWinner          Boolean @default(false)
+
+  game              Game    @relation(fields: [gameId], references: [id])
+  user              User    @relation(fields: [userId], references: [id])
+
+  @@unique([gameId, userId])
+}
+
+model Transaction {
+  id              String        @id @default(uuid())
+  userId          String
+  type            TransactionType
+  amount          Decimal       @db.Decimal(15, 9)
+  status          TransactionStatus @default(pending)
+  gameId          String?
+  txHash          String?
+  createdAt       DateTime      @default(now())
+
+  user            User          @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([type])
+  @@index([createdAt])
+}
+
+model Achievement {
+  id              String    @id @default(uuid())
+  name            String
+  description     String
+  icon            String
+  users           UserAchievement[]
+
+  @@unique([name])
+}
+
+model UserAchievement {
+  id              String    @id @default(uuid())
+  userId          String
+  achievementId   String
+  unlockedAt      DateTime  @default(now())
+
+  user            User      @relation(fields: [userId], references: [id])
+  achievement     Achievement @relation(fields: [achievementId], references: [id])
+
+  @@unique([userId, achievementId])
+}
+
+enum GameType {
+  coinflip
+  dice
+  crash
+  numberguess
+}
+
+enum GameStatus {
+  waiting
+  active
+  finished
+  cancelled
+}
+
+enum TransactionType {
+  bet
+  win
+  deposit
+  withdrawal
+  fee
+  premium
+  gift
+}
+
+enum TransactionStatus {
+  pending
+  confirmed
+  failed
+}
