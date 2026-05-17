@@ -1,19 +1,16 @@
 import { TonConnectUI } from '@tonconnect/ui-react'
-import { toNano, Address } from '@ton/ton'
+import { toNano, Address, TonClient } from '@ton/ton'
 
-const TONCENTER_API = 'https://testnet.toncenter.com/api/v2'
+const TON_CLIENT = new TonClient({
+  endpoint: 'https://testnet.toncenter.com/api/v2/jsonRPC',
+})
 
 export async function getWalletBalance(walletAddress: string): Promise<number> {
   try {
-    const address = Address.parse(walletAddress).toString({ bounceable: true, testOnly: true })
-    const res = await fetch(`${TONCENTER_API}/getAddressBalance?address=${encodeURIComponent(address)}`)
-    const data = await res.json()
-    if (data.ok) {
-      return Number(data.result) / 1e9
-    }
-    return 0
-  } catch (e) {
-    console.error('Failed to fetch balance:', e)
+    const address = Address.parse(walletAddress)
+    const balance = await TON_CLIENT.getBalance(address)
+    return Number(balance) / 1e9
+  } catch {
     return 0
   }
 }
@@ -48,7 +45,7 @@ export async function sendTONPayment(
   }
 
   try {
-    await tonConnectUI.sendTransaction(transaction)
+    const result = await tonConnectUI.sendTransaction(transaction)
     return true
   } catch (error: any) {
     if (error?.message?.includes('User declined')) {
