@@ -71,14 +71,6 @@ router.post('/create', authMiddleware, async (req, res) => {
       return res.status(404).json({ message: 'User not found' })
     }
 
-    const balance = Number(user.balance)
-
-    if (balance < betAmount) {
-      return res.status(400).json({
-        message: `Insufficient balance. You have ${balance.toFixed(2)} TON, but tried to bet ${betAmount} TON.`
-      })
-    }
-
     if (betAmount < 0.01) {
       return res.status(400).json({ message: 'Minimum bet is 0.01 TON' })
     }
@@ -98,21 +90,8 @@ router.post('/create', authMiddleware, async (req, res) => {
       createdAt: new Date(),
     }
 
-    // Deduct balance immediately on bet creation
-    await prisma.user.update({
-      where: { id: userId },
-      data: { balance: { decrement: betAmount } }
-    })
-
-    // Record the bet transaction
-    await prisma.transaction.create({
-      data: {
-        userId,
-        type: 'bet',
-        amount: betAmount,
-        status: 'confirmed',
-      }
-    })
+    // Note: Balance is checked on frontend via on-chain wallet balance
+    // Payment happens via TON Connect on frontend
 
     sessions.set(id, session)
 
@@ -152,23 +131,14 @@ router.post('/result/:sessionId', authMiddleware, async (req, res) => {
     let winnings = 0
     if (result.winner === 'player') {
       winnings = session.betAmount * result.multiplier
-      // Credit winnings
+      // Track stats only - balance is managed on-chain
       await prisma.user.update({
         where: { id: userId },
         data: {
-          balance: { increment: winnings },
           totalWins: { increment: 1 },
           winStreak: { increment: 1 },
           totalGames: { increment: 1 },
-        }
-      })
-
-      await prisma.transaction.create({
-        data: {
-          userId,
-          type: 'win',
-          amount: winnings,
-          status: 'confirmed',
+          xp: { increment: 10 }
         }
       })
     } else {
@@ -178,16 +148,10 @@ router.post('/result/:sessionId', authMiddleware, async (req, res) => {
           totalLosses: { increment: 1 },
           winStreak: 0,
           totalGames: { increment: 1 },
+          xp: { increment: 1 }
         }
       })
     }
-
-    await prisma.user.update({
-      where: { id: userId },
-      data: {
-        xp: { increment: result.winner === 'player' ? 10 : 1 }
-      }
-    })
 
     // Clean up session
     sessions.delete(String(sessionId))
@@ -198,7 +162,6 @@ router.post('/result/:sessionId', authMiddleware, async (req, res) => {
       betAmount: session.betAmount,
       winnings,
       netProfit: result.winner === 'player' ? winnings - session.betAmount : -session.betAmount,
-      newBalance: (await prisma.user.findUnique({ where: { id: userId }, select: { balance: true } }))?.balance,
     })
   } catch (error) {
     console.error('Process result error:', error)

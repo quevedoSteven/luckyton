@@ -5,6 +5,7 @@ import Card from '../components/common/Card'
 import { useGamePlay } from '../hooks/useGamePlay'
 import { useAppStore } from '../store'
 import { hapticSuccess, hapticError } from '../services/telegram'
+import { getWalletBalance } from '../services/ton'
 import { useTonWallet } from '@tonconnect/ui-react'
 
 export default function CrashGame() {
@@ -19,14 +20,23 @@ export default function CrashGame() {
   const [winnings, setWinnings] = useState(0)
   const [hasWon, setHasWon] = useState<boolean | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [balance, setBalance] = useState(0)
 
   const animationRef = useRef<number | null>(null)
   const startTimeRef = useRef<number>(0)
 
-  const balance = useAppStore((state) => state.balance)
-  const setBalance = useAppStore((state) => state.setBalance)
   const { playGame, isProcessing, error: gameError, getBalance } = useGamePlay()
   const wallet = useTonWallet()
+  const setStoreBalance = useAppStore((state) => state.setBalance)
+
+  useEffect(() => {
+    if (wallet?.account?.address) {
+      getWalletBalance(wallet.account.address).then((bal) => {
+        setBalance(bal)
+        setStoreBalance(bal)
+      })
+    }
+  }, [wallet?.account?.address])
 
   const quickBets = [0.01, 0.05, 0.1, 0.5, 1, 5]
 

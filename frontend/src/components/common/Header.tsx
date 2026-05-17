@@ -43,11 +43,9 @@ export default function Header({ showBalance = true }: HeaderProps) {
   }
 
   const updateHeaderBalance = async () => {
-    const user = getUserFromStorage()
-    if (user?.balance !== undefined) {
-      setHeaderBalance(Number(user.balance))
-    } else if (wallet?.account?.address) {
+    if (wallet?.account?.address) {
       try {
+        // Always get actual on-chain balance from the TON wallet
         const onChainBalance = await getWalletBalance(wallet.account.address)
         setHeaderBalance(onChainBalance)
       } catch {

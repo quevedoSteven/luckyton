@@ -5,6 +5,7 @@ import Card from '../components/common/Card'
 import { useGamePlay } from '../hooks/useGamePlay'
 import { useAppStore } from '../store'
 import { hapticSuccess, hapticError } from '../services/telegram'
+import { getWalletBalance } from '../services/ton'
 import { useTonWallet } from '@tonconnect/ui-react'
 
 const diceFaces = ['⚀', '⚁', '⚂', '⚃', '⚄', '⚅']
@@ -19,12 +20,22 @@ export default function DiceRollGame() {
   const [gameMode, setGameMode] = useState<'pvp' | 'house'>('house')
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [animationTimer, setAnimationTimer] = useState<ReturnType<typeof setTimeout> | null>(null)
+  const [balance, setBalance] = useState(0)
 
-  const balance = useAppStore((state) => state.balance)
   const user = useAppStore((state) => state.user)
   const { playGame, isProcessing, error, clearError, hasSufficientBalance, lastResult, createSession } = useGamePlay()
   const wallet = useTonWallet()
-  const setBalance = useAppStore((state) => state.setBalance)
+  const setStoreBalance = useAppStore((state) => state.setBalance)
+
+  // Fetch on-chain balance
+  useEffect(() => {
+    if (wallet?.account?.address) {
+      getWalletBalance(wallet.account.address).then((bal) => {
+        setBalance(bal)
+        setStoreBalance(bal)
+      })
+    }
+  }, [wallet?.account?.address])
 
   const quickBets = [0.01, 0.05, 0.1, 0.5, 1, 5]
 
