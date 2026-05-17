@@ -1,4 +1,4 @@
-const API_URL = import.meta.env.VITE_API_URL || 'https://your-railway-backend.up.railway.app'
+const API_URL = import.meta.env.VITE_API_URL || 'https://luckyton-production.up.railway.app'
 
 async function request<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const token = localStorage.getItem('auth_token')

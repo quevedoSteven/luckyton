@@ -12,9 +12,13 @@ export default defineConfig({
   server: {
     port: 3000,
     proxy: {
-      '/api': 'http://localhost:4045',
+      '/api': {
+        target: 'https://luckyton-production.up.railway.app',
+        changeOrigin: true,
+      },
       '/socket.io': {
-        target: 'http://localhost:4045',
+        target: 'https://luckyton-production.up.railway.app',
+        changeOrigin: true,
         ws: true,
       },
     },

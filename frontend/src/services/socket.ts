@@ -1,6 +1,6 @@
 import { io, Socket } from 'socket.io-client'
 
-const WS_URL = import.meta.env.VITE_WS_URL || 'https://your-railway-backend.up.railway.app'
+const WS_URL = import.meta.env.VITE_WS_URL || 'https://luckyton-production.up.railway.app'
 
 class GameSocket {
   private socket: Socket | null = null
