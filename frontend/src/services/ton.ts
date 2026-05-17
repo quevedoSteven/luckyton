@@ -1,5 +1,19 @@
 import { TonConnectUI } from '@tonconnect/ui-react'
-import { toNano, Address } from '@ton/ton'
+import { toNano, Address, TonClient } from '@ton/ton'
+
+const TON_CLIENT = new TonClient({
+  endpoint: 'https://testnet.toncenter.com/api/v2/jsonRPC',
+})
+
+export async function getWalletBalance(walletAddress: string): Promise<number> {
+  try {
+    const address = Address.parse(walletAddress)
+    const balance = await TON_CLIENT.getBalance(address)
+    return Number(balance) / 1e9
+  } catch {
+    return 0
+  }
+}
 
 export interface PaymentParams {
   amount: number

@@ -1,18 +1,25 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useTonWallet, useTonConnectUI, TonConnectButton } from '@tonconnect/ui-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Link } from 'react-router-dom'
 import { hapticImpact } from '../../services/telegram'
+import { getWalletBalance } from '../../services/ton'
 
 interface HeaderProps {
   showBalance?: boolean
-  balance?: number
 }
 
-export default function Header({ showBalance = true, balance = 0 }: HeaderProps) {
+export default function Header({ showBalance = true }: HeaderProps) {
   const wallet = useTonWallet()
   const [tonConnectUI] = useTonConnectUI()
   const [showConnect, setShowConnect] = useState(false)
+  const [balance, setBalance] = useState(0)
+
+  useEffect(() => {
+    if (wallet?.account?.address) {
+      getWalletBalance(wallet.account.address).then(setBalance)
+    }
+  }, [wallet?.account?.address])
 
   return (
     <header className="safe-top bg-bg-secondary/80 backdrop-blur-xl border-b border-white/5 px-4 py-3">
