@@ -133,7 +133,7 @@ router.post('/result/:sessionId', authMiddleware, async (req, res) => {
     const { sessionId } = req.params
     const userId = (req as any).userId
 
-    const session = sessions.get(sessionId)
+    const session = sessions.get(String(sessionId))
     if (!session) {
       return res.status(404).json({ message: 'Session not found' })
     }
@@ -190,7 +190,7 @@ router.post('/result/:sessionId', authMiddleware, async (req, res) => {
     })
 
     // Clean up session
-    sessions.delete(sessionId)
+    sessions.delete(String(sessionId))
 
     res.json({
       sessionId,
