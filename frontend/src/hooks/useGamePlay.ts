@@ -19,7 +19,7 @@ export interface GameResult {
   betAmount: number
   winnings: number
   netProfit: number
-  newBalance: any
+  newBalance?: any
 }
 
 interface GameError {
