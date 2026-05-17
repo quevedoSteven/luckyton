@@ -17,7 +17,7 @@ export default function Header({ showBalance = true }: HeaderProps) {
 
   useEffect(() => {
     if (wallet?.account?.address) {
-      console.log('[Header] Wallet address:', wallet.account.address)
+      console.log('[Header] Wallet account:', JSON.stringify(wallet.account))
       getWalletBalance(wallet.account.address).then((bal) => {
         console.log('[Header] Balance set to:', bal)
         setBalance(bal)
