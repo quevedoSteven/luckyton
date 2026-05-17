@@ -1,6 +1,6 @@
 import { Routes, Route } from 'react-router-dom'
 import { useTonWallet } from '@tonconnect/ui-react'
-import { useEffect, useRef } from 'react'
+import { useEffect } from 'react'
 import BottomNav from './components/common/BottomNav'
 import Header from './components/common/Header'
 import Lobby from './pages/Lobby'
@@ -12,29 +12,17 @@ import Profile from './pages/Profile'
 import Leaderboard from './pages/Leaderboard'
 import Shop from './pages/Shop'
 import Particles from './components/common/Particles'
-
-const API_URL = import.meta.env.VITE_API_URL || 'https://luckyton-production.up.railway.app'
+import { authenticate, setAuthToken, getAuthToken } from './services/api'
 
 function App() {
   const wallet = useTonWallet()
-  const authDone = useRef(false)
 
   useEffect(() => {
-    if (wallet?.account?.address && !authDone.current) {
-      authDone.current = true
-      fetch(`${API_URL}/api/auth/verify`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ walletAddress: wallet.account.address })
-      })
-        .then(res => res.json())
-        .then(data => {
-          if (data.token) {
-            localStorage.setItem('auth_token', data.token)
-            localStorage.setItem('luckyton_user', JSON.stringify(data.user))
-          }
-        })
-        .catch(console.error)
+    if (wallet?.account?.address) {
+      authenticate(wallet.account.address)
+    } else {
+      setAuthToken(null)
+      localStorage.removeItem('luckyton_user')
     }
   }, [wallet?.account?.address])
 

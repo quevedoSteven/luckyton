@@ -1,20 +1,71 @@
 const API_URL = import.meta.env.VITE_API_URL || 'https://luckyton-production.up.railway.app'
 
+let authToken: string | null = localStorage.getItem('auth_token')
+
+export function setAuthToken(token: string | null) {
+  authToken = token
+  if (token) {
+    localStorage.setItem('auth_token', token)
+  } else {
+    localStorage.removeItem('auth_token')
+  }
+}
+
+export function getAuthToken(): string | null {
+  return authToken
+}
+
+export async function authenticate(walletAddress: string): Promise<string | null> {
+  try {
+    const res = await fetch(`${API_URL}/api/auth/verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ walletAddress }),
+    })
+    if (!res.ok) return null
+    const data = await res.json()
+    if (data.token) {
+      setAuthToken(data.token)
+      localStorage.setItem('luckyton_user', JSON.stringify(data.user))
+      return data.token
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
 async function request<T>(endpoint: string, options?: RequestInit): Promise<T> {
-  const token = localStorage.getItem('auth_token')
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...(options?.headers as Record<string, string> || {}),
   }
 
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`
+  if (authToken) {
+    headers['Authorization'] = `Bearer ${authToken}`
   }
 
   const response = await fetch(`${API_URL}${endpoint}`, {
     ...options,
     headers,
   })
+
+  if (response.status === 401 && authToken) {
+    const walletAddress = JSON.parse(localStorage.getItem('luckyton_user') || '{}')?.walletAddress
+    if (walletAddress) {
+      const newToken = await authenticate(walletAddress)
+      if (newToken) {
+        headers['Authorization'] = `Bearer ${newToken}`
+        const retry = await fetch(`${API_URL}${endpoint}`, { ...options, headers })
+        if (!retry.ok) {
+          const error = await retry.json().catch(() => ({ message: 'Unknown error' }))
+          throw new Error(error.message || `HTTP ${retry.status}`)
+        }
+        return retry.json()
+      }
+    }
+    setAuthToken(null)
+  }
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ message: 'Unknown error' }))

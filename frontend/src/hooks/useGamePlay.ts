@@ -1,5 +1,5 @@
-import { useState, useCallback, useEffect } from 'react'
-import { api } from '../services/api'
+import { useState, useCallback } from 'react'
+import { api, getAuthToken } from '../services/api'
 import { useAppStore } from '../store'
 
 export interface GameSession {
@@ -44,6 +44,10 @@ export function useGamePlay() {
   }, [setBalance])
 
   const createSession = useCallback(async (gameType: string, betAmount: number, choice?: string | number): Promise<GameSession | null> => {
+    if (!getAuthToken()) {
+      setError('Wallet not connected or authentication failed. Please reconnect your wallet.')
+      return null
+    }
     setIsProcessing(true)
     setError(null)
     setLastResult(null)
@@ -67,6 +71,10 @@ export function useGamePlay() {
   }, [setBalance, getBalance])
 
   const playGame = useCallback(async (gameType: string, betAmount: number, choice?: string | number): Promise<GameResult | null> => {
+    if (!getAuthToken()) {
+      setError('Wallet not connected or authentication failed. Please reconnect your wallet.')
+      return null
+    }
     setIsProcessing(true)
     setError(null)
     setLastResult(null)
