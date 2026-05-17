@@ -28,7 +28,10 @@ const io = new Server(httpServer, {
 
 const PORT = process.env.PORT || 4045
 
-app.use(cors())
+app.use(cors({
+  origin: ['https://luckyton.vercel.app', 'http://localhost:3000'],
+  credentials: true,
+}))
 app.use(express.json())
 
 const limiter = rateLimit({

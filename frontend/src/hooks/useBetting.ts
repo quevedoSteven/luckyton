@@ -28,7 +28,6 @@ export function useBetting() {
     setError(null)
 
     try {
-      // Step 1: Create bet session
       const createRes = await fetch(`${API_URL}/api/betting/create`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -40,18 +39,19 @@ export function useBetting() {
         }),
       })
 
-      if (!createRes.ok) throw new Error('Failed to create bet')
+      if (!createRes.ok) {
+        const errText = await createRes.text()
+        throw new Error(`Failed to create bet: ${createRes.status} ${errText}`)
+      }
 
       const { sessionId, paymentRequest } = await createRes.json()
 
-      // Step 2: Send TON payment
       const transaction = {
         validUntil: paymentRequest.validUntil,
         messages: [
           {
             address: paymentRequest.recipient,
             amount: toNano(paymentRequest.amount).toString(),
-            payload: undefined,
           },
         ],
       }
@@ -59,23 +59,25 @@ export function useBetting() {
       const result = await tonConnectUI.sendTransaction(transaction)
       const txHash = result.boc[0] || ''
 
-      // Step 3: Verify and get game result
       const verifyRes = await fetch(`${API_URL}/api/betting/verify/${sessionId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ txHash }),
       })
 
-      if (!verifyRes.ok) throw new Error('Failed to verify bet')
+      if (!verifyRes.ok) {
+        const errText = await verifyRes.text()
+        throw new Error(`Failed to verify: ${verifyRes.status} ${errText}`)
+      }
 
       const gameResult = await verifyRes.json()
 
-      // Refresh balance
       getWalletBalance(wallet.account.address)
 
       return gameResult
     } catch (err: any) {
-      setError(err.message || 'Transaction failed')
+      const msg = err.message || 'Transaction failed'
+      setError(msg)
       return null
     } finally {
       setIsProcessing(false)

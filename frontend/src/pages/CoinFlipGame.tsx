@@ -34,9 +34,6 @@ export default function CoinFlipGame() {
       setWinnings(gameResult.winnings)
       if (won) hapticSuccess()
       else hapticError()
-    } else if (error) {
-      setHasWon(false)
-      hapticError()
     }
 
     setIsFlipping(false)
@@ -89,6 +86,18 @@ export default function CoinFlipGame() {
           )}
         </AnimatePresence>
       </div>
+
+      <AnimatePresence>
+        {error && (
+          <motion.div
+            className="text-center p-3 rounded-xl bg-neon-red/10 border border-neon-red/30"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+          >
+            <p className="text-neon-red text-sm">{error}</p>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {result && !isFlipping && (
