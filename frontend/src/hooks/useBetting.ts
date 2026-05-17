@@ -1,7 +1,10 @@
 import { useState, useCallback } from 'react'
 import { useTonConnectUI, useTonWallet } from '@tonconnect/ui-react'
-import { toNano } from '@ton/ton'
 import { getWalletBalance } from '../services/ton'
+
+function toNano(amount: number): string {
+  return BigInt(Math.floor(amount * 1e9)).toString()
+}
 
 const API_URL = import.meta.env.VITE_API_URL || 'https://luckyton-production.up.railway.app'
 

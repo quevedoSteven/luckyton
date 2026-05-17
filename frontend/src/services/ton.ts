@@ -36,21 +36,12 @@ export async function sendTONPayment(
     throw new Error('Wallet not connected')
   }
 
-  const { toNano, Address } = await import('@ton/ton')
-
-  const recipientAddr = Address.parse(params.recipient).toString({ bounceable: true, testOnly: true })
-
   const transaction = {
     validUntil: Math.floor(Date.now() / 1000) + 600,
     messages: [
       {
-        address: recipientAddr,
-        amount: toNano(params.amount).toString(),
-        payload: params.comment ? btoa(
-          new TextEncoder().encode(
-            '\x00\x00\x00\x00' + params.comment
-          ).reduce((data, byte) => data + String.fromCharCode(byte), '')
-        ) : undefined,
+        address: params.recipient,
+        amount: BigInt(Math.floor(params.amount * 1e9)).toString(),
       },
     ],
   }

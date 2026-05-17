@@ -2,12 +2,9 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import { TonConnectUIProvider } from '@tonconnect/ui-react'
-import { Buffer } from 'buffer'
 import App from './App'
 import './styles/globals.css'
 import { initTelegram } from './services/telegram'
-
-;(globalThis as any).Buffer = Buffer
 
 const MANIFEST_URL = 'https://luckyton.vercel.app/tonconnect-manifest.json'
 const TG_BOT_URL = 'https://t.me/your_bot'
