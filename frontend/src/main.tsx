@@ -7,7 +7,7 @@ import App from './App'
 import './styles/globals.css'
 import { initTelegram } from './services/telegram'
 
-globalThis.Buffer = Buffer
+;(globalThis as any).Buffer = Buffer
 
 const MANIFEST_URL = 'https://luckyton.vercel.app/tonconnect-manifest.json'
 const TG_BOT_URL = 'https://t.me/your_bot'
