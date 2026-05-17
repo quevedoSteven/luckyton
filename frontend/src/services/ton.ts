@@ -12,21 +12,62 @@ async function rpcCall(method: string, params: Record<string, unknown>) {
   return data.result
 }
 
-function parseAddress(address: string): string {
-  try {
-    const raw = address.replace(/^EQ/, '').replace(/^UQ/, '')
-    return 'EQ' + raw
-  } catch {
-    return address
+function rawToUserFriendly(rawAddress: string): string {
+  if (rawAddress.startsWith('EQ') || rawAddress.startsWith('UQ')) {
+    return rawAddress
   }
+
+  const parts = rawAddress.split(':')
+  if (parts.length !== 2) return rawAddress
+
+  const tag = parseInt(parts[0], 10)
+  const hex = parts[1]
+
+  const buf = new Uint8Array(36)
+  buf[0] = tag
+  for (let i = 0; i < 32; i++) {
+    buf[1 + i] = parseInt(hex.substring(i * 2, i * 2 + 2), 16)
+  }
+
+  const crc = crc16(buf)
+  const addrWithCrc = new Uint8Array(38)
+  addrWithCrc.set(buf)
+  addrWithCrc[36] = (crc >> 8) & 0xff
+  addrWithCrc[37] = crc & 0xff
+
+  return btoa(String.fromCharCode(...addrWithCrc))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '')
 }
+
+function crc16(data: Uint8Array): number {
+  let crc = 0
+  for (let i = 0; i < data.length; i++) {
+    crc = ((crc << 8) ^ crcTable[((crc >> 8) ^ data[i]) & 0xff]) & 0xffff
+  }
+  return crc
+}
+
+const crcTable = (() => {
+  const table = new Array(256)
+  for (let i = 0; i < 256; i++) {
+    let c = i
+    for (let j = 0; j < 8; j++) {
+      c = c & 1 ? (0xa001 ^ (c >> 1)) : (c >> 1)
+    }
+    table[i] = c
+  }
+  return table
+})()
 
 export async function getWalletBalance(walletAddress: string): Promise<number> {
   try {
-    const addr = parseAddress(walletAddress)
+    const addr = rawToUserFriendly(walletAddress)
     console.log('[TON] Fetching balance for:', addr)
     const result = await rpcCall('getAddressBalance', { address: addr })
     console.log('[TON] Raw balance response:', result)
+    if (!result) return 0
     const balance = Number(result) / 1e9
     console.log('[TON] Parsed balance:', balance)
     return balance
@@ -56,7 +97,7 @@ export async function sendTONPayment(
     validUntil: Math.floor(Date.now() / 1000) + 600,
     messages: [
       {
-        address: params.recipient,
+        address: rawToUserFriendly(params.recipient),
         amount: toNano(params.amount).toString(),
         payload: params.comment ? btoa(
           new TextEncoder().encode(
