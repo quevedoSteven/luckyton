@@ -1,6 +1,7 @@
 const API_URL = import.meta.env.VITE_API_URL || 'https://luckyton-production.up.railway.app'
 
 let authToken: string | null = localStorage.getItem('auth_token')
+let authPromise: Promise<string | null> | null = null
 
 export function setAuthToken(token: string | null) {
   authToken = token
@@ -8,6 +9,7 @@ export function setAuthToken(token: string | null) {
     localStorage.setItem('auth_token', token)
   } else {
     localStorage.removeItem('auth_token')
+    localStorage.removeItem('luckyton_user')
   }
 }
 
@@ -15,27 +17,59 @@ export function getAuthToken(): string | null {
   return authToken
 }
 
+export function isAuthenticating(): boolean {
+  return authPromise !== null
+}
+
 export async function authenticate(walletAddress: string): Promise<string | null> {
-  try {
-    const res = await fetch(`${API_URL}/api/auth/verify`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ walletAddress }),
-    })
-    if (!res.ok) return null
-    const data = await res.json()
-    if (data.token) {
-      setAuthToken(data.token)
-      localStorage.setItem('luckyton_user', JSON.stringify(data.user))
-      return data.token
+  if (authPromise) return authPromise
+
+  authPromise = (async () => {
+    try {
+      const res = await fetch(`${API_URL}/api/auth/verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ walletAddress }),
+      })
+      if (!res.ok) {
+        console.error('Auth failed:', res.status, await res.text().catch(() => ''))
+        return null
+      }
+      const data = await res.json()
+      if (data.token) {
+        setAuthToken(data.token)
+        localStorage.setItem('luckyton_user', JSON.stringify(data.user))
+        return data.token
+      }
+      return null
+    } catch (err) {
+      console.error('Auth error:', err)
+      return null
+    } finally {
+      authPromise = null
     }
-    return null
-  } catch {
-    return null
-  }
+  })()
+
+  return authPromise
+}
+
+async function ensureAuth(): Promise<boolean> {
+  if (authToken) return true
+  const userStr = localStorage.getItem('luckyton_user')
+  if (!userStr) return false
+  try {
+    const user = JSON.parse(userStr)
+    if (user?.walletAddress) {
+      const token = await authenticate(user.walletAddress)
+      return token !== null
+    }
+  } catch {}
+  return false
 }
 
 async function request<T>(endpoint: string, options?: RequestInit): Promise<T> {
+  await ensureAuth()
+
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...(options?.headers as Record<string, string> || {}),
@@ -50,8 +84,9 @@ async function request<T>(endpoint: string, options?: RequestInit): Promise<T> {
     headers,
   })
 
-  if (response.status === 401 && authToken) {
-    const walletAddress = JSON.parse(localStorage.getItem('luckyton_user') || '{}')?.walletAddress
+  if (response.status === 401) {
+    const userStr = localStorage.getItem('luckyton_user')
+    const walletAddress = userStr ? JSON.parse(userStr)?.walletAddress : null
     if (walletAddress) {
       const newToken = await authenticate(walletAddress)
       if (newToken) {

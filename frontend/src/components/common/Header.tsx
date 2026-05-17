@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Link } from 'react-router-dom'
 import { hapticImpact } from '../../services/telegram'
 import { getWalletBalance } from '../../services/ton'
+import { setAuthToken } from '../../services/api'
 
 interface UserSession {
   id: string
@@ -73,8 +74,7 @@ export default function Header({ showBalance = true }: HeaderProps) {
 
   const handleDisconnect = () => {
     tonConnectUI.disconnect()
-    localStorage.removeItem('luckyton_user')
-    localStorage.removeItem('auth_token')
+    setAuthToken(null)
     setHeaderBalance(0)
   }
 

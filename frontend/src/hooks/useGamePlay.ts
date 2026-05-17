@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react'
-import { api, getAuthToken } from '../services/api'
+import { api, getAuthToken, authenticate } from '../services/api'
 import { useAppStore } from '../store'
 
 export interface GameSession {
@@ -44,15 +44,26 @@ export function useGamePlay() {
   }, [setBalance])
 
   const createSession = useCallback(async (gameType: string, betAmount: number, choice?: string | number): Promise<GameSession | null> => {
-    if (!getAuthToken()) {
-      setError('Wallet not connected or authentication failed. Please reconnect your wallet.')
-      return null
-    }
     setIsProcessing(true)
     setError(null)
     setLastResult(null)
 
     try {
+      if (!getAuthToken()) {
+        const userStr = localStorage.getItem('luckyton_user')
+        const walletAddress = userStr ? JSON.parse(userStr)?.walletAddress : null
+        if (walletAddress) {
+          const token = await authenticate(walletAddress)
+          if (!token) {
+            setError('Authentication failed. Please reconnect your wallet.')
+            return null
+          }
+        } else {
+          setError('Wallet not connected. Please connect your wallet first.')
+          return null
+        }
+      }
+
       const data = await api.betting.create(gameType, betAmount, choice)
       const newBalance = data.newBalance !== undefined ? data.newBalance : (await getBalance() ?? 0)
       setBalance(Number(newBalance))
@@ -71,15 +82,26 @@ export function useGamePlay() {
   }, [setBalance, getBalance])
 
   const playGame = useCallback(async (gameType: string, betAmount: number, choice?: string | number): Promise<GameResult | null> => {
-    if (!getAuthToken()) {
-      setError('Wallet not connected or authentication failed. Please reconnect your wallet.')
-      return null
-    }
     setIsProcessing(true)
     setError(null)
     setLastResult(null)
 
     try {
+      if (!getAuthToken()) {
+        const userStr = localStorage.getItem('luckyton_user')
+        const walletAddress = userStr ? JSON.parse(userStr)?.walletAddress : null
+        if (walletAddress) {
+          const token = await authenticate(walletAddress)
+          if (!token) {
+            setError('Authentication failed. Please reconnect your wallet.')
+            return null
+          }
+        } else {
+          setError('Wallet not connected. Please connect your wallet first.')
+          return null
+        }
+      }
+
       // Step 1: Create session (deducts balance)
       const createData = await api.betting.create(gameType, betAmount, choice)
       if (createData?.newBalance !== undefined) {
