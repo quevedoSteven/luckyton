@@ -13,18 +13,15 @@ class GameSocket {
     })
 
     this.socket.on('connect', () => {
-      console.log('Connected to game server')
       this.emit('connected', true)
     })
 
     this.socket.on('disconnect', () => {
-      console.log('Disconnected from game server')
       this.emit('disconnected', true)
     })
 
-    this.socket.on('error', (error: any) => {
-      console.error('Socket error:', error)
-      this.emit('error', error)
+    this.socket.on('error', (_error: any) => {
+      this.emit('error', 'connection_error')
     })
 
     this.socket.on('game_state', (data: any) => {

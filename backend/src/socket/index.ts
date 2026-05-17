@@ -22,7 +22,7 @@ export function handleSocketConnection(io: Server) {
 
   io.on('connection', (socket: Socket) => {
     const user = socket.data.user
-    console.log(`Player connected: ${user.walletAddress}`)
+    console.log('Player connected')
 
     socket.on('join_queue', (data: { gameType: string; betAmount: number; choice?: string }) => {
       joinQueue(socket.id, user, data.gameType, data.betAmount, data.choice)
@@ -55,7 +55,7 @@ export function handleSocketConnection(io: Server) {
     })
 
     socket.on('disconnect', () => {
-      console.log(`Player disconnected: ${user.walletAddress}`)
+      console.log('Player disconnected')
       leaveQueue(socket.id)
       handleCrash.removePlayer(socket, user)
     })

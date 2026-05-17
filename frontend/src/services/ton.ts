@@ -14,15 +14,10 @@ async function rpcCall(method: string, params: Record<string, unknown>) {
 
 export async function getWalletBalance(walletAddress: string): Promise<number> {
   try {
-    console.log('[TON] Raw wallet address:', walletAddress)
     const result = await rpcCall('getAddressBalance', { address: walletAddress })
-    console.log('[TON] Raw balance response:', result)
     if (!result) return 0
-    const balance = Number(result) / 1e9
-    console.log('[TON] Parsed balance:', balance)
-    return balance
-  } catch (e) {
-    console.error('[TON] Failed to fetch balance:', e)
+    return Number(result) / 1e9
+  } catch {
     return 0
   }
 }

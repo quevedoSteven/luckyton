@@ -20,7 +20,7 @@ class MatchmakingQueue {
     }
     const queue = this.queues.get(player.gameType)!
     queue.push(player)
-    console.log(`Player ${player.userId} joined ${player.gameType} queue (${queue.length} waiting)`)
+    console.log(`Player joined ${player.gameType} queue (${queue.length} waiting)`)
   }
 
   removePlayer(socketId: string) {
@@ -63,7 +63,7 @@ class MatchmakingQueue {
           betAmount: player2.betAmount,
         })
 
-        console.log(`Match created: ${gameId} (${player1.userId} vs ${player2.userId})`)
+        console.log(`Match created: ${gameId}`)
       }
 
       if (queue.length > 0) {
