@@ -64,7 +64,7 @@ export default function CrashGame() {
     }
 
     // Place the bet on backend
-    const result = await playGame('crash', betAmount)
+    const result = await playGame('crash', betAmount, undefined, wallet.account.address)
     if (!result) {
       setError('Failed to place bet')
       return
@@ -144,12 +144,12 @@ export default function CrashGame() {
         <p className="text-text-secondary text-xs mt-1">Balance: {balance.toFixed(2)} TON</p>
       </div>
 
-      {/* Balance Warning */}
-      {!hasEnoughBalance && hasBet && (
-        <div className="text-center p-2 rounded-lg bg-neon-red/10 border border-neon-red/30">
-          <p className="text-neon-red text-sm">Insufficient balance for next bet.</p>
-        </div>
-      )}
+  {/* Balance Warning - only show if wallet connected and insufficient */}
+  {!hasEnoughBalance && hasBet && wallet && (
+  <div className="text-center p-2 rounded-lg bg-neon-red/10 border border-neon-red/30">
+  <p className="text-neon-red text-sm">Insufficient balance for next bet.</p>
+  </div>
+  )}
 
       {/* Error */}
       <AnimatePresence>

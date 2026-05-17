@@ -27,6 +27,14 @@ interface GameError {
   code?: string
 }
 
+async function ensureAuthed(walletAddress?: string): Promise<boolean> {
+  if (getAuthToken()) return true
+  const addr = walletAddress || JSON.parse(localStorage.getItem('luckyton_user') || '{}')?.walletAddress
+  if (!addr) return false
+  const token = await authenticate(addr)
+  return token !== null
+}
+
 export function useGamePlay() {
   const [isProcessing, setIsProcessing] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -43,25 +51,15 @@ export function useGamePlay() {
     }
   }, [setBalance])
 
-  const createSession = useCallback(async (gameType: string, betAmount: number, choice?: string | number): Promise<GameSession | null> => {
+  const createSession = useCallback(async (gameType: string, betAmount: number, choice?: string | number, walletAddress?: string): Promise<GameSession | null> => {
     setIsProcessing(true)
     setError(null)
     setLastResult(null)
 
     try {
-      if (!getAuthToken()) {
-        const userStr = localStorage.getItem('luckyton_user')
-        const walletAddress = userStr ? JSON.parse(userStr)?.walletAddress : null
-        if (walletAddress) {
-          const token = await authenticate(walletAddress)
-          if (!token) {
-            setError('Authentication failed. Please reconnect your wallet.')
-            return null
-          }
-        } else {
-          setError('Wallet not connected. Please connect your wallet first.')
-          return null
-        }
+      if (!(await ensureAuthed(walletAddress))) {
+        setError('Please connect your wallet first.')
+        return null
       }
 
       const data = await api.betting.create(gameType, betAmount, choice)
@@ -81,28 +79,17 @@ export function useGamePlay() {
     }
   }, [setBalance, getBalance])
 
-  const playGame = useCallback(async (gameType: string, betAmount: number, choice?: string | number): Promise<GameResult | null> => {
+  const playGame = useCallback(async (gameType: string, betAmount: number, choice?: string | number, walletAddress?: string): Promise<GameResult | null> => {
     setIsProcessing(true)
     setError(null)
     setLastResult(null)
 
     try {
-      if (!getAuthToken()) {
-        const userStr = localStorage.getItem('luckyton_user')
-        const walletAddress = userStr ? JSON.parse(userStr)?.walletAddress : null
-        if (walletAddress) {
-          const token = await authenticate(walletAddress)
-          if (!token) {
-            setError('Authentication failed. Please reconnect your wallet.')
-            return null
-          }
-        } else {
-          setError('Wallet not connected. Please connect your wallet first.')
-          return null
-        }
+      if (!(await ensureAuthed(walletAddress))) {
+        setError('Please connect your wallet first.')
+        return null
       }
 
-      // Step 1: Create session (deducts balance)
       const createData = await api.betting.create(gameType, betAmount, choice)
       if (createData?.newBalance !== undefined) {
         setBalance(Number(createData.newBalance))
@@ -110,7 +97,6 @@ export function useGamePlay() {
         await getBalance()
       }
 
-      // Step 2: Get result
       const resultData = await api.betting.result(createData.sessionId)
       const newBalance = resultData.newBalance !== undefined ? Number(resultData.newBalance) : (await getBalance() ?? 0)
       setBalance(newBalance)

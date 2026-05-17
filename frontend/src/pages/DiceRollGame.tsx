@@ -73,7 +73,7 @@ export default function DiceRollGame() {
 
     try {
       // Create the session first
-      const result = await playGame('dice', betAmount)
+      const result = await playGame('dice', betAmount, undefined, wallet.account.address)
 
       if (result && result.result && result.result.details) {
         const details = result.result.details
@@ -123,14 +123,14 @@ export default function DiceRollGame() {
         </p>
       </div>
 
-      {/* Balance Warning */}
-      {balance < betAmount && (
-        <div className="text-center p-2 rounded-lg bg-neon-red/10 border border-neon-red/30">
-          <p className="text-neon-red text-sm">
-            Insufficient balance. You have {balance.toFixed(2)} TON, but bet is {betAmount.toFixed(2)} TON.
-          </p>
-        </div>
-      )}
+  {/* Balance Warning - only show if wallet connected and insufficient */}
+  {wallet && balance < betAmount && (
+  <div className="text-center p-2 rounded-lg bg-neon-red/10 border border-neon-red/30">
+  <p className="text-neon-red text-sm">
+  Insufficient balance. You have {balance.toFixed(2)} TON, but bet is {betAmount.toFixed(2)} TON.
+  </p>
+  </div>
+  )}
 
       {/* Error Display */}
       {error && (

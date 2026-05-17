@@ -52,7 +52,7 @@ export default function NumberGuessGame() {
     clearError()
 
     try {
-      const gameResult = await playGame('numberguess', betAmount, String(guess))
+      const gameResult = await playGame('numberguess', betAmount, String(guess), wallet.account.address)
 
       if (gameResult && gameResult.result) {
         const details = gameResult.result.details
@@ -93,12 +93,12 @@ export default function NumberGuessGame() {
         <p className="text-text-secondary text-xs mt-1">Balance: {balance.toFixed(2)} TON</p>
       </div>
 
-      {/* Balance Warning */}
-      {balance < betAmount && (
-        <div className="text-center p-2 rounded-lg bg-neon-red/10 border border-neon-red/30">
-          <p className="text-neon-red text-sm">Insufficient balance. Need {betAmount.toFixed(2)} TON, have {balance.toFixed(2)} TON.</p>
-        </div>
-      )}
+  {/* Balance Warning - only show if wallet connected and insufficient */}
+  {wallet && balance < betAmount && (
+  <div className="text-center p-2 rounded-lg bg-neon-red/10 border border-neon-red/30">
+  <p className="text-neon-red text-sm">Insufficient balance. Need {betAmount.toFixed(2)} TON, have {balance.toFixed(2)} TON.</p>
+  </div>
+  )}
 
       {/* Error Display */}
       {error && (
