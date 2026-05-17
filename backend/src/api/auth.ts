@@ -21,7 +21,6 @@ router.post('/verify', async (req, res) => {
         data: {
           walletAddress,
           username: `Player_${walletAddress.slice(-6)}`,
-          balance: 5.0, // Starting bonus for new users
         }
       })
     }
