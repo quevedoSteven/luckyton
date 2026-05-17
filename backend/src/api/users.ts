@@ -1,46 +1,108 @@
 import { Router } from 'express'
+import { authMiddleware } from '../middleware/auth.js'
+import prisma from '../db/index.js'
 
 const router = Router()
 
-router.get('/me', (req, res) => {
-  res.json({
-    id: 'user_demo',
-    walletAddress: '0x1234...4f2a',
-    username: 'Player_7x3k',
-    balance: 12.45,
-    totalGames: 247,
-    totalWins: 142,
-    totalLosses: 105,
-    winStreak: 3,
-    bestWinStreak: 7,
-    level: 12,
-    xp: 2450,
-    isPremium: true,
-    premiumExpiry: '2026-06-17T00:00:00Z',
-  })
+router.get('/me', authMiddleware, async (req, res) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: (req as any).userId }
+    })
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' })
+    }
+
+    res.json({
+      id: user.id,
+      walletAddress: user.walletAddress,
+      username: user.username,
+      balance: Number(user.balance),
+      totalGames: user.totalGames,
+      totalWins: user.totalWins,
+      totalLosses: user.totalLosses,
+      winStreak: user.winStreak,
+      bestWinStreak: user.bestWinStreak,
+      level: user.level,
+      xp: user.xp,
+      isPremium: user.isPremium,
+      createdAt: user.createdAt,
+    })
+  } catch (error) {
+    console.error('Get profile error:', error)
+    res.status(500).json({ message: 'Failed to get profile' })
+  }
 })
 
-router.patch('/me', (req, res) => {
-  const { username, avatar } = req.body
-  res.json({ success: true, username, avatar })
+router.patch('/me', authMiddleware, async (req, res) => {
+  try {
+    const { username, avatar } = req.body
+    const userId = (req as any).userId
+
+    const updated = await prisma.user.update({
+      where: { id: userId },
+      data: { username, avatar }
+    })
+
+    res.json({ success: true, username: updated.username, avatar: updated.avatar })
+  } catch (error) {
+    console.error('Update profile error:', error)
+    res.status(500).json({ message: 'Failed to update profile' })
+  }
 })
 
-router.get('/stats', (req, res) => {
-  res.json({
-    totalGames: 247,
-    wins: 142,
-    losses: 105,
-    winRate: 57.5,
-    totalWagered: 124.5,
-    totalWon: 156.8,
-    profit: 32.3,
-    byGame: {
-      coinflip: { games: 89, wins: 52, winRate: 58.4 },
-      dice: { games: 67, wins: 38, winRate: 56.7 },
-      crash: { games: 56, wins: 31, winRate: 55.4 },
-      numberguess: { games: 35, wins: 21, winRate: 60 },
-    },
-  })
+router.get('/stats', authMiddleware, async (req, res) => {
+  try {
+    const userId = (req as any).userId
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        transactions: true,
+        _count: { select: { gamePlayers: true } }
+      }
+    })
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' })
+    }
+
+    const totalWagered = user.transactions
+      .filter(t => t.type === 'bet')
+      .reduce((sum, t) => sum + Number(t.amount), 0)
+
+    const totalWon = user.transactions
+      .filter(t => t.type === 'win')
+      .reduce((sum, t) => sum + Number(t.amount), 0)
+
+    res.json({
+      totalGames: user.totalGames,
+      wins: user.totalWins,
+      losses: user.totalLosses,
+      winRate: user.totalGames > 0 ? (user.totalWins / user.totalGames) * 100 : 0,
+      totalWagered,
+      totalWon,
+      profit: totalWon - totalWagered,
+    })
+  } catch (error) {
+    console.error('Get stats error:', error)
+    res.status(500).json({ message: 'Failed to get stats' })
+  }
+})
+
+router.get('/balance', authMiddleware, async (req, res) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: (req as any).userId },
+      select: { balance: true }
+    })
+
+    res.json({ balance: Number(user?.balance || 0) })
+  } catch (error) {
+    console.error('Get balance error:', error)
+    res.status(500).json({ message: 'Failed to get balance' })
+  }
 })
 
 export default router

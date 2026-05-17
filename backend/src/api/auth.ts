@@ -1,18 +1,33 @@
 import { Router } from 'express'
 import jwt from 'jsonwebtoken'
+import prisma from '../db/index.js'
 
 const router = Router()
 
 router.post('/verify', async (req, res) => {
   try {
-    const { walletAddress, signature } = req.body
+    const { walletAddress } = req.body
 
-    if (!walletAddress || !signature) {
-      return res.status(400).json({ message: 'Wallet address and signature required' })
+    if (!walletAddress) {
+      return res.status(400).json({ message: 'Wallet address required' })
+    }
+
+    let user = await prisma.user.findUnique({
+      where: { walletAddress }
+    })
+
+    if (!user) {
+      user = await prisma.user.create({
+        data: {
+          walletAddress,
+          username: `Player_${walletAddress.slice(-6)}`,
+          balance: 5.0, // Starting bonus for new users
+        }
+      })
     }
 
     const token = jwt.sign(
-      { walletAddress, id: `user_${walletAddress.slice(-8)}` },
+      { walletAddress, id: user.id },
       process.env.JWT_SECRET || 'secret',
       { expiresIn: '7d' }
     )
@@ -20,13 +35,20 @@ router.post('/verify', async (req, res) => {
     res.json({
       token,
       user: {
-        id: `user_${walletAddress.slice(-8)}`,
-        walletAddress,
-        balance: 0,
-        isPremium: false,
+        id: user.id,
+        walletAddress: user.walletAddress,
+        username: user.username,
+        balance: user.balance,
+        isPremium: user.isPremium,
+        totalGames: user.totalGames,
+        totalWins: user.totalWins,
+        totalLosses: user.totalLosses,
+        level: user.level,
+        xp: user.xp,
       },
     })
   } catch (error) {
+    console.error('Auth error:', error)
     res.status(500).json({ message: 'Authentication failed' })
   }
 })

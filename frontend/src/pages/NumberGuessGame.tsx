@@ -1,7 +1,11 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import Button from '../components/common/Button'
 import Card from '../components/common/Card'
+import { useGamePlay } from '../hooks/useGamePlay'
+import { useAppStore } from '../store'
+import { hapticSuccess, hapticError } from '../services/telegram'
+import { useTonWallet } from '@tonconnect/ui-react'
 
 export default function NumberGuessGame() {
   const [betAmount, setBetAmount] = useState(0.1)
@@ -10,48 +14,92 @@ export default function NumberGuessGame() {
   const [result, setResult] = useState<number | null>(null)
   const [hasWon, setHasWon] = useState<boolean | null>(null)
   const [winMultiplier, setWinMultiplier] = useState(1)
+  const [winnings, setWinnings] = useState(0)
 
-  const handleGuess = () => {
-    if (guess === null || isRevealing) return
-    setIsRevealing(true)
-    setResult(null)
-    setHasWon(null)
-
-    setTimeout(() => {
-      const actual = Math.floor(Math.random() * 100) + 1
-      setResult(actual)
-      const diff = Math.abs(actual - guess)
-      
-      if (diff === 0) {
-        setWinMultiplier(10)
-        setHasWon(true)
-      } else if (diff <= 5) {
-        setWinMultiplier(2)
-        setHasWon(true)
-      } else if (diff <= 15) {
-        setWinMultiplier(1.5)
-        setHasWon(true)
-      } else {
-        setHasWon(false)
-      }
-      setIsRevealing(false)
-    }, 2000)
-  }
+  const balance = useAppStore((state) => state.balance)
+  const { playGame, isProcessing, error, clearError, hasSufficientBalance } = useGamePlay()
+  const wallet = useTonWallet()
 
   const quickBets = [0.01, 0.05, 0.1, 0.5, 1, 5]
 
+  const handleBetChange = useCallback((newAmount: number) => {
+    const maxBet = Math.min(newAmount, balance)
+    if (maxBet < 0.01) {
+      setBetAmount(0.01)
+      return
+    }
+    setBetAmount(maxBet)
+  }, [balance])
+
+  const handleGuess = async () => {
+    if (guess === null || isRevealing || isProcessing || !wallet?.account?.address) return
+    if (!hasSufficientBalance(betAmount, balance)) return
+
+    setIsRevealing(true)
+    setResult(null)
+    setHasWon(null)
+    clearError()
+
+    try {
+      const gameResult = await playGame('numberguess', betAmount, String(guess))
+
+      if (gameResult && gameResult.result) {
+        const details = gameResult.result.details
+        const actual = details.actual
+        const diff = Math.abs(actual - guess)
+        let multiplier = 0
+        let won = false
+
+        if (diff === 0) { multiplier = 10; won = true; }
+        else if (diff <= 5) { multiplier = 2; won = true; }
+        else if (diff <= 15) { multiplier = 1.5; won = true; }
+
+        await new Promise(resolve => setTimeout(resolve, 2000))
+
+        setResult(actual)
+        setWinMultiplier(multiplier)
+        setHasWon(won)
+        setWinnings(gameResult.winnings)
+
+        if (won) hapticSuccess()
+        else hapticError()
+      }
+    } catch (err) {
+      console.error('Number guess error:', err)
+    } finally {
+      setIsRevealing(false)
+    }
+  }
+
+  const canGuess = !isRevealing && !isProcessing && wallet?.account?.address && balance >= betAmount && guess !== null
+
   return (
     <div className="p-4 space-y-6">
-      {/* Game Title */}
+      {/* Game Title & Balance */}
       <div className="text-center">
         <h2 className="text-2xl font-bold mb-1">Number Guess</h2>
         <p className="text-text-secondary text-sm">Guess 1-100, exact match wins 10x!</p>
+        <p className="text-text-secondary text-xs mt-1">Balance: {balance.toFixed(2)} TON</p>
       </div>
+
+      {/* Balance Warning */}
+      {balance < betAmount && (
+        <div className="text-center p-2 rounded-lg bg-neon-red/10 border border-neon-red/30">
+          <p className="text-neon-red text-sm">Insufficient balance. Need {betAmount.toFixed(2)} TON, have {balance.toFixed(2)} TON.</p>
+        </div>
+      )}
+
+      {/* Error Display */}
+      {error && (
+        <div className="text-center p-2 rounded-lg bg-neon-red/10 border border-neon-red/30">
+          <p className="text-neon-red text-sm">{error}</p>
+        </div>
+      )}
 
       {/* Number Display */}
       <div className="flex justify-center py-8">
         <AnimatePresence mode="wait">
-          {isRevealing ? (
+          {isRevealing || isProcessing ? (
             <motion.div
               key="revealing"
               className="w-32 h-32 rounded-2xl bg-bg-tertiary border-2 border-neon-purple/30 flex items-center justify-center"
@@ -94,7 +142,7 @@ export default function NumberGuessGame() {
 
       {/* Result Message */}
       <AnimatePresence>
-        {result !== null && !isRevealing && (
+        {result !== null && !isRevealing && !isProcessing && (
           <motion.div
             className="text-center"
             initial={{ opacity: 0, y: 10 }}
@@ -102,7 +150,7 @@ export default function NumberGuessGame() {
           >
             <p className={`text-xl font-bold ${hasWon ? 'text-neon-green' : 'text-neon-red'}`}>
               {hasWon
-                ? `You won ${(betAmount * winMultiplier).toFixed(2)} TON! (${winMultiplier}x)`
+                ? `You won ${winnings.toFixed(2)} TON! (${winMultiplier}x)`
                 : 'Not close enough! Try again.'}
             </p>
             <p className="text-text-secondary text-sm mt-1">
@@ -147,12 +195,7 @@ export default function NumberGuessGame() {
         </div>
         <div className="grid grid-cols-5 gap-2">
           {[1, 25, 50, 75, 100].map((num) => (
-            <Button
-              key={num}
-              variant={guess === num ? 'primary' : 'secondary'}
-              size="sm"
-              onClick={() => setGuess(num)}
-            >
+            <Button key={num} variant={guess === num ? 'primary' : 'secondary'} size="sm" onClick={() => setGuess(num)}>
               {num}
             </Button>
           ))}
@@ -184,24 +227,24 @@ export default function NumberGuessGame() {
           <input
             type="number"
             value={betAmount}
-            onChange={(e) => setBetAmount(parseFloat(e.target.value) || 0)}
+            onChange={(e) => {
+              const val = parseFloat(e.target.value)
+              setBetAmount(isNaN(val) ? 0.01 : val)
+            }}
             className="w-24 bg-bg-tertiary rounded-lg px-3 py-2 text-center font-mono font-bold text-lg focus:outline-none focus:ring-2 focus:ring-neon-blue"
             min={0.01}
-            max={10}
             step={0.01}
           />
         </div>
         <div className="grid grid-cols-3 gap-2">
-          {quickBets.map((amount) => (
-            <Button
-              key={amount}
-              variant={betAmount === amount ? 'primary' : 'secondary'}
-              size="sm"
-              onClick={() => setBetAmount(amount)}
-            >
-              {amount}
-            </Button>
-          ))}
+          {quickBets.map((amount) => {
+            const isDisabled = balance < amount
+            return (
+              <Button key={amount} variant={betAmount === amount ? 'primary' : 'secondary'} size="sm" onClick={() => handleBetChange(amount)} disabled={isDisabled}>
+                {amount}
+              </Button>
+            )
+          })}
         </div>
       </Card>
 
@@ -218,10 +261,10 @@ export default function NumberGuessGame() {
         variant="primary"
         size="lg"
         fullWidth
-        disabled={guess === null || isRevealing}
+        disabled={!canGuess}
         onClick={handleGuess}
       >
-        {isRevealing ? 'Revealing...' : 'Guess Number'}
+        {isProcessing ? 'Processing...' : isRevealing ? 'Revealing...' : 'Guess Number'}
       </Button>
 
       {/* Provably Fair */}

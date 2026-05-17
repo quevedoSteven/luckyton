@@ -18,9 +18,26 @@ interface AppState {
 
 export const useAppStore = create<AppState>((set) => ({
   user: null,
-  setUser: (user) => set({ user }),
+  setUser: (user) => {
+    // Sync with localStorage for cross-component communication
+    if (user) {
+      localStorage.setItem('luckyton_user', JSON.stringify(user));
+    } else {
+      localStorage.removeItem('luckyton_user');
+    }
+    set({ user });
+  },
   balance: 0,
-  setBalance: (balance) => set({ balance }),
+  setBalance: (balance) => {
+    // Also update localStorage for Header component
+    const userStr = localStorage.getItem('luckyton_user');
+    if (userStr) {
+      const user = JSON.parse(userStr);
+      user.balance = balance;
+      localStorage.setItem('luckyton_user', JSON.stringify(user));
+    }
+    set({ balance });
+  },
   activeGame: null,
   setActiveGame: (game) => set({ activeGame: game }),
   transactions: [],

@@ -41,6 +41,28 @@ export const api = {
         body: JSON.stringify(data),
       }),
     getStats: () => request<any>('/api/users/stats'),
+    getBalance: () => request<{ balance: number }>('/api/users/balance'),
+  },
+
+  betting: {
+    create: (gameType: string, betAmount: number, choice?: string | number) =>
+      request<{
+        sessionId: string
+        serverSeedHash: string
+        clientSeed: string
+        message: string
+        newBalance?: number
+      }>('/api/betting/create', {
+        method: 'POST',
+        body: JSON.stringify({ gameType, betAmount, choice }),
+      }),
+
+    result: (sessionId: string) =>
+      request<{ sessionId: string; result: any; betAmount: number; winnings: number; netProfit: number; newBalance?: any }>(`/api/betting/result/${sessionId}`, {
+        method: 'POST',
+      }),
+
+    getBalance: () => request<{ balance: number }>('/api/betting/balance'),
   },
 
   games: {

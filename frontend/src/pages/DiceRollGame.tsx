@@ -1,48 +1,132 @@
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import Button from '../components/common/Button'
 import Card from '../components/common/Card'
+import { useGamePlay } from '../hooks/useGamePlay'
+import { useAppStore } from '../store'
 import { hapticSuccess, hapticError } from '../services/telegram'
+import { useTonWallet } from '@tonconnect/ui-react'
 
 const diceFaces = ['⚀', '⚁', '⚂', '⚃', '⚄', '⚅']
 
 export default function DiceRollGame() {
+  // -- State --
   const [betAmount, setBetAmount] = useState(0.1)
   const [isRolling, setIsRolling] = useState(false)
   const [playerRoll, setPlayerRoll] = useState<number | null>(null)
   const [opponentRoll, setOpponentRoll] = useState<number | null>(null)
   const [hasWon, setHasWon] = useState<boolean | null>(null)
   const [gameMode, setGameMode] = useState<'pvp' | 'house'>('house')
+  const [sessionId, setSessionId] = useState<string | null>(null)
+  const [animationTimer, setAnimationTimer] = useState<ReturnType<typeof setTimeout> | null>(null)
 
-  const handleRoll = () => {
-    if (isRolling) return
+  const balance = useAppStore((state) => state.balance)
+  const user = useAppStore((state) => state.user)
+  const { playGame, isProcessing, error, clearError, hasSufficientBalance, lastResult, createSession } = useGamePlay()
+  const wallet = useTonWallet()
+  const setBalance = useAppStore((state) => state.setBalance)
+
+  const quickBets = [0.01, 0.05, 0.1, 0.5, 1, 5]
+
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => {
+      if (animationTimer) clearTimeout(animationTimer)
+    }
+  }, [animationTimer])
+
+  const handleBetChange = useCallback(  
+    (newAmount: number) => {
+      const maxBet = Math.min(newAmount, balance)
+      if (maxBet < 0.01) {
+        setBetAmount(0.01)
+        return
+      }
+      setBetAmount(maxBet)
+    },
+    [balance]
+  )
+
+  const handleRoll = async () => {
+    if (isRolling || isProcessing || !wallet?.account) return
+
+    if (!hasSufficientBalance(betAmount, balance)) {
+      return
+    }
+
     setIsRolling(true)
     setPlayerRoll(null)
     setOpponentRoll(null)
     setHasWon(null)
+    clearError()
 
-    setTimeout(() => {
-      const pRoll = Math.floor(Math.random() * 6) + 1
-      const oRoll = gameMode === 'house' ? Math.floor(Math.random() * 6) + 1 : Math.floor(Math.random() * 6) + 1
-      setPlayerRoll(pRoll)
-      setOpponentRoll(oRoll)
-      const won = pRoll > oRoll
-      setHasWon(won)
-      if (won) hapticSuccess()
-      else hapticError()
+    try {
+      // Create the session first
+      const result = await playGame('dice', betAmount)
+
+      if (result && result.result && result.result.details) {
+        const details = result.result.details
+        // Show player roll after a short delay
+        const timer = setTimeout(() => {
+          setPlayerRoll(details.playerRoll)
+          setOpponentRoll(details.houseRoll)
+
+          const won = result.result.winner === 'player'
+          setHasWon(won)
+
+          if (won) {
+            hapticSuccess()
+          } else {
+            hapticError()
+          }
+
+          setIsRolling(false)
+
+          // Update balance after result comes back
+          if (lastResult) {
+            setBalance(lastResult.newBalance)
+          }
+        }, 1500)
+
+        setAnimationTimer(timer)
+      } else {
+        setIsRolling(false)
+      }
+
+    } catch (error) {
+      console.error('Game error:', error)
       setIsRolling(false)
-    }, 1500)
+    }
   }
 
-  const quickBets = [0.01, 0.05, 0.1, 0.5, 1, 5]
+  const canRoll = !isRolling && !isProcessing && wallet?.account?.address && balance >= 0.01 && balance >= betAmount
 
   return (
     <div className="p-4 space-y-6">
-      {/* Game Title */}
+      {/* Game Title & Balance */}
       <div className="text-center">
         <h2 className="text-2xl font-bold mb-1">Dice Roll</h2>
         <p className="text-text-secondary text-sm">Roll higher than your opponent</p>
+        <p className="text-text-secondary text-xs mt-1">
+          Balance: {balance.toFixed(2)} TON
+        </p>
       </div>
+
+      {/* Balance Warning */}
+      {balance < betAmount && (
+        <div className="text-center p-2 rounded-lg bg-neon-red/10 border border-neon-red/30">
+          <p className="text-neon-red text-sm">
+            Insufficient balance. You have {balance.toFixed(2)} TON, but bet is {betAmount.toFixed(2)} TON.
+          </p>
+        </div>
+      )}
+
+      {/* Error Display */}
+      {error && (
+        <div className="text-center p-2 rounded-lg bg-neon-red/10 border border-neon-red/30">
+          <p className="text-neon-red text-sm">{error}</p>
+        </div>
+      )}
 
       {/* Game Mode Toggle */}
       <Card>
@@ -160,7 +244,7 @@ export default function DiceRollGame() {
 
       {/* Result Message */}
       <AnimatePresence>
-        {hasWon !== null && !isRolling && (
+        {hasWon !== null && !isRolling && lastResult && (
           <motion.div
             className="text-center"
             initial={{ opacity: 0, y: 10 }}
@@ -172,10 +256,13 @@ export default function DiceRollGame() {
               }`}
             >
               {hasWon
-                ? `You won ${(betAmount * 1.97).toFixed(2)} TON!`
+                ? `You won ${lastResult.winnings.toFixed(2)} TON!`
                 : playerRoll === opponentRoll
                 ? "It's a tie! Bet returned."
                 : 'House wins this round!'}
+            </p>
+            <p className="text-text-secondary text-sm mt-1">
+              New Balance: {Number(lastResult.newBalance).toFixed(2)} TON
             </p>
           </motion.div>
         )}
@@ -189,24 +276,31 @@ export default function DiceRollGame() {
           <input
             type="number"
             value={betAmount}
-            onChange={(e) => setBetAmount(parseFloat(e.target.value) || 0)}
+            onChange={(e) => {
+              const val = parseFloat(e.target.value)
+              setBetAmount(isNaN(val) ? 0.01 : val)
+            }}
             className="w-24 bg-bg-tertiary rounded-lg px-3 py-2 text-center font-mono font-bold text-lg focus:outline-none focus:ring-2 focus:ring-neon-blue"
             min={0.01}
-            max={10}
             step={0.01}
           />
         </div>
         <div className="grid grid-cols-3 gap-2">
-          {quickBets.map((amount) => (
-            <Button
-              key={amount}
-              variant={betAmount === amount ? 'primary' : 'secondary'}
-              size="sm"
-              onClick={() => setBetAmount(amount)}
-            >
-              {amount}
-            </Button>
-          ))}
+          {quickBets.map((amount) => {
+            const isDisabled = balance < amount
+            return (
+              <Button
+                key={amount}
+                variant={betAmount === amount ? 'primary' : 'secondary'}
+                size="sm"
+                onClick={() => handleBetChange(amount)}
+                disabled={isDisabled}
+                className={isDisabled ? 'opacity-50' : ''}
+              >
+                {amount}
+              </Button>
+            )
+          })}
         </div>
       </Card>
 
@@ -223,10 +317,10 @@ export default function DiceRollGame() {
         variant="primary"
         size="lg"
         fullWidth
-        disabled={isRolling}
+        disabled={!canRoll}
         onClick={handleRoll}
       >
-        {isRolling ? 'Rolling...' : 'Roll Dice'}
+        {isProcessing ? 'Processing...' : isRolling ? 'Rolling...' : 'Roll Dice'}
       </Button>
 
       {/* Provably Fair */}

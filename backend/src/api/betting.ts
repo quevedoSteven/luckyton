@@ -1,126 +1,221 @@
 import { Router } from 'express'
-import crypto from 'crypto'
+import { authMiddleware } from '../middleware/auth.js'
+import prisma from '../db/index.js'
+import { generateDiceRoll, generateCoinFlip, createProvablyFairData } from '../engine/provably-fair.js'
 
-const TONCENTER_API = 'https://testnet.toncenter.com/api/v2'
+const router = Router()
 
 interface BetSession {
   id: string
   type: string
   betAmount: number
   choice?: string
-  playerWallet: string
-  txHash?: string
-  result?: any
-  winnings: number
-  status: 'pending' | 'paid' | 'completed'
+  userId: string
+  walletAddress: string
+  provablyFair: ReturnType<typeof createProvablyFairData>
+  status: 'pending' | 'completed'
   createdAt: Date
 }
 
 const sessions: Map<string, BetSession> = new Map()
 
-function generateResult(type: string, choice?: string): { winner: 'player' | 'house'; multiplier: number; details: any } {
-  const serverSeed = crypto.randomBytes(32).toString('hex')
-  const clientSeed = crypto.randomBytes(16).toString('hex')
-  const nonce = Date.now()
+async function processBet(session: BetSession): Promise<any> {
+  const pf = session.provablyFair
 
-  const hash = crypto.createHmac('sha256', serverSeed).update(`${clientSeed}:${nonce}`).digest('hex')
-  const hashInt = parseInt(hash.substring(0, 8), 16)
-
-  switch (type) {
-    case 'coinflip': {
-      const result = hashInt % 2 === 0 ? 'heads' : 'tails'
-      const won = result === choice
-      return { winner: won ? 'player' : 'house', multiplier: won ? 1.97 : 0, details: { result, choice } }
-    }
+  switch (session.type) {
     case 'dice': {
-      const playerRoll = (hashInt % 6) + 1
-      const houseHash = crypto.createHmac('sha256', serverSeed).update(`${clientSeed}:${nonce + 1}`).digest('hex')
-      const houseRoll = (parseInt(houseHash.substring(0, 8), 16) % 6) + 1
-      const won = playerRoll > houseRoll
-      return { winner: won ? 'player' : 'house', multiplier: won ? 1.97 : 0, details: { playerRoll, houseRoll } }
+      const playerRoll = generateDiceRoll(pf.serverSeed, pf.clientSeed, pf.nonce)
+      const houseRoll = generateDiceRoll(pf.serverSeed, pf.clientSeed, pf.nonce + 1)
+      const isWin = playerRoll > houseRoll
+      const houseEdge = 0.03
+      const multiplier = isWin ? (2 - houseEdge) : 0
+
+      return {
+        gameType: 'dice',
+        winner: isWin ? ('player' as const) : ('house' as const),
+        multiplier: isWin ? multiplier : 0,
+        details: { playerRoll, houseRoll, isWin, houseEdge, sessionId: session.id }
+      }
     }
-    case 'numberguess': {
-      const actual = (hashInt % 100) + 1
-      const guess = parseInt(choice || '50')
-      const diff = Math.abs(actual - guess)
-      let multiplier = 0
-      if (diff === 0) multiplier = 10
-      else if (diff <= 5) multiplier = 2
-      else if (diff <= 15) multiplier = 1.5
-      return { winner: multiplier > 0 ? 'player' : 'house', multiplier, details: { actual, guess, diff } }
+
+    case 'coinflip': {
+      const result = generateCoinFlip(pf.serverSeed, pf.clientSeed, pf.nonce)
+      const isWin = result === session.choice
+      const houseEdge = 0.03
+      const multiplier = isWin ? (2 - houseEdge) : 0
+
+      return {
+        gameType: 'coinflip',
+        winner: isWin ? ('player' as const) : ('house' as const),
+        multiplier: isWin ? multiplier : 0,
+        details: { result, choice: session.choice, isWin, houseEdge, sessionId: session.id }
+      }
     }
+
     default:
       return { winner: 'house', multiplier: 0, details: {} }
   }
 }
 
-const router = Router()
-
-router.post('/create', async (req, res) => {
+router.post('/create', authMiddleware, async (req, res) => {
   try {
-    const { gameType, betAmount, choice, playerWallet } = req.body
+    const { gameType, betAmount, choice } = req.body
+    const userId = (req as any).userId
 
-    if (!gameType || !betAmount || betAmount < 0.01) {
-      return res.status(400).json({ message: 'Invalid bet parameters' })
+    if (!gameType || !betAmount || betAmount <= 0) {
+      return res.status(400).json({ message: 'Invalid bet parameters. betAmount must be greater than 0.' })
     }
 
-    const id = `bet_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`
+    const user = await prisma.user.findUnique({ where: { id: userId } })
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' })
+    }
+
+    const balance = Number(user.balance)
+
+    if (balance < betAmount) {
+      return res.status(400).json({
+        message: `Insufficient balance. You have ${balance.toFixed(2)} TON, but tried to bet ${betAmount} TON.`
+      })
+    }
+
+    if (betAmount < 0.01) {
+      return res.status(400).json({ message: 'Minimum bet is 0.01 TON' })
+    }
+
+    const id = `bet_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
+    const provablyFair = createProvablyFairData()
 
     const session: BetSession = {
       id,
       type: gameType,
       betAmount,
       choice,
-      playerWallet: playerWallet || '',
-      winnings: 0,
+      userId,
+      walletAddress: user.walletAddress,
+      provablyFair,
       status: 'pending',
       createdAt: new Date(),
     }
+
+    // Deduct balance immediately on bet creation
+    await prisma.user.update({
+      where: { id: userId },
+      data: { balance: { decrement: betAmount } }
+    })
+
+    // Record the bet transaction
+    await prisma.transaction.create({
+      data: {
+        userId,
+        type: 'bet',
+        amount: betAmount,
+        status: 'confirmed',
+      }
+    })
 
     sessions.set(id, session)
 
     res.json({
       sessionId: id,
-      paymentRequest: {
-        amount: betAmount,
-        recipient: process.env.HOUSE_WALLET_ADDRESS || '',
-        comment: `LuckyTON:${id}`,
-        validUntil: Math.floor(Date.now() / 1000) + 300,
-      },
+      serverSeedHash: provablyFair.serverSeedHash,
+      clientSeed: provablyFair.clientSeed,
+      message: `${betAmount} TON deducted from balance. Good luck!`,
     })
-  } catch {
+  } catch (error) {
+    console.error('Create bet error:', error)
     res.status(500).json({ message: 'Failed to create bet' })
   }
 })
 
-router.post('/verify/:sessionId', async (req, res) => {
+router.post('/result/:sessionId', authMiddleware, async (req, res) => {
   try {
     const { sessionId } = req.params
-    const { txHash } = req.body
+    const userId = (req as any).userId
 
     const session = sessions.get(sessionId)
     if (!session) {
       return res.status(404).json({ message: 'Session not found' })
     }
 
-    if (txHash) {
-      session.txHash = txHash
-      session.status = 'paid'
+    if (session.userId !== userId) {
+      return res.status(403).json({ message: 'Not authorized for this session' })
     }
 
-    const result = generateResult(session.type, session.choice)
-    session.result = result
-    session.winnings = result.winner === 'player' ? session.betAmount * result.multiplier : 0
+    if (session.status === 'completed') {
+      return res.status(400).json({ message: 'Session already processed' })
+    }
+
+    const result = await processBet(session)
     session.status = 'completed'
+
+    let winnings = 0
+    if (result.winner === 'player') {
+      winnings = session.betAmount * result.multiplier
+      // Credit winnings
+      await prisma.user.update({
+        where: { id: userId },
+        data: {
+          balance: { increment: winnings },
+          totalWins: { increment: 1 },
+          winStreak: { increment: 1 },
+          totalGames: { increment: 1 },
+        }
+      })
+
+      await prisma.transaction.create({
+        data: {
+          userId,
+          type: 'win',
+          amount: winnings,
+          status: 'confirmed',
+        }
+      })
+    } else {
+      await prisma.user.update({
+        where: { id: userId },
+        data: {
+          totalLosses: { increment: 1 },
+          winStreak: 0,
+          totalGames: { increment: 1 },
+        }
+      })
+    }
+
+    await prisma.user.update({
+      where: { id: userId },
+      data: {
+        xp: { increment: result.winner === 'player' ? 10 : 1 }
+      }
+    })
+
+    // Clean up session
+    sessions.delete(sessionId)
 
     res.json({
       sessionId,
       result,
-      winnings: session.winnings,
       betAmount: session.betAmount,
+      winnings,
+      netProfit: result.winner === 'player' ? winnings - session.betAmount : -session.betAmount,
+      newBalance: (await prisma.user.findUnique({ where: { id: userId }, select: { balance: true } }))?.balance,
     })
-  } catch {
-    res.status(500).json({ message: 'Failed to verify bet' })
+  } catch (error) {
+    console.error('Process result error:', error)
+    res.status(500).json({ message: 'Failed to process bet result' })
+  }
+})
+
+router.get('/balance', authMiddleware, async (req, res) => {
+  try {
+    const userId = (req as any).userId
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { balance: true }
+    })
+    res.json({ balance: Number(user?.balance || 0) })
+  } catch (error) {
+    res.status(500).json({ message: 'Failed to get balance' })
   }
 })
 

@@ -2,6 +2,10 @@ import { useState, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import Button from '../components/common/Button'
 import Card from '../components/common/Card'
+import { useGamePlay } from '../hooks/useGamePlay'
+import { useAppStore } from '../store'
+import { hapticSuccess, hapticError } from '../services/telegram'
+import { useTonWallet } from '@tonconnect/ui-react'
 
 export default function CrashGame() {
   const [betAmount, setBetAmount] = useState(0.1)
@@ -12,14 +16,50 @@ export default function CrashGame() {
   const [cashedOut, setCashedOut] = useState(false)
   const [cashOutMultiplier, setCashOutMultiplier] = useState<number | null>(null)
   const [crashPoint, setCrashPoint] = useState(0)
-  const animationRef = useRef<number>()
+  const [winnings, setWinnings] = useState(0)
+  const [hasWon, setHasWon] = useState<boolean | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const animationRef = useRef<number | null>(null)
   const startTimeRef = useRef<number>(0)
+
+  const balance = useAppStore((state) => state.balance)
+  const setBalance = useAppStore((state) => state.setBalance)
+  const { playGame, isProcessing, error: gameError, getBalance } = useGamePlay()
+  const wallet = useTonWallet()
 
   const quickBets = [0.01, 0.05, 0.1, 0.5, 1, 5]
 
-  const startGame = () => {
-    if (isRunning) return
-    
+  useEffect(() => {
+    return () => {
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current)
+      }
+    }
+  }, [animationRef])
+
+  const generateCrashPoint = () => {
+    const e = Math.pow(2, 32)
+    const hashInt = Math.floor(Math.random() * e)
+    const point = Math.floor((100 * e - hashInt) / (e - hashInt)) / 100
+    return Math.max(1.01, Math.min(point, 100))
+  }
+
+  const startGame = async () => {
+    if (isRunning || isProcessing || !wallet?.account?.address) return
+
+    if (balance < betAmount) {
+      setError('Insufficient balance')
+      return
+    }
+
+    // Place the bet on backend
+    const result = await playGame('crash', betAmount)
+    if (!result) {
+      setError('Failed to place bet')
+      return
+    }
+
     const point = generateCrashPoint()
     setCrashPoint(point)
     setMultiplier(1.0)
@@ -27,17 +67,25 @@ export default function CrashGame() {
     setHasCrashed(false)
     setCashedOut(false)
     setCashOutMultiplier(null)
+    setHasWon(null)
+    setWinnings(0)
+    setError(null)
     setHasBet(true)
     startTimeRef.current = Date.now()
 
     const animate = () => {
       const elapsed = (Date.now() - startTimeRef.current) / 1000
-      const newMultiplier = Math.pow(Math.E, 0.07 * elapsed * elapsed)
-      
+      const newMultiplier = Math.min(Math.pow(Math.E, 0.07 * elapsed * elapsed), 1000)
+
       if (newMultiplier >= point) {
         setMultiplier(point)
         setIsRunning(false)
         setHasCrashed(true)
+        setHasWon(false)
+        if (!cashedOut) {
+          hapticError()
+          setWinnings(0)
+        }
         return
       }
 
@@ -48,25 +96,19 @@ export default function CrashGame() {
     animationRef.current = requestAnimationFrame(animate)
   }
 
-  const cashOut = () => {
-    if (!isRunning || cashedOut) return
+  const handleCashOut = () => {
+    if (!isRunning || cashedOut || !hasBet) return
     setCashedOut(true)
     setCashOutMultiplier(multiplier)
-  }
+    setIsRunning(false)
+    setHasWon(true)
+    const winAmount = betAmount * multiplier * 0.97
+    setWinnings(winAmount)
+    hapticSuccess()
 
-  useEffect(() => {
-    return () => {
-      if (animationRef.current) {
-        cancelAnimationFrame(animationRef.current)
-      }
+    if (animationRef.current) {
+      cancelAnimationFrame(animationRef.current)
     }
-  }, [])
-
-  const generateCrashPoint = () => {
-    const e = Math.pow(2, 32)
-    const hashInt = Math.floor(Math.random() * e)
-    const point = Math.floor((100 * e - hashInt) / (e - hashInt)) / 100
-    return Math.max(1.0, Math.min(point, 100))
   }
 
   const getMultiplierColor = () => {
@@ -80,18 +122,41 @@ export default function CrashGame() {
     return Math.min((multiplier - 1) * 30, 100)
   }
 
+  const canPlay = !isProcessing && !isRunning && wallet?.account?.address
+  const hasEnoughBalance = balance >= betAmount
+
   return (
     <div className="p-4 space-y-6">
-      {/* Game Title */}
+      {/* Game Title & Balance */}
       <div className="text-center">
         <h2 className="text-2xl font-bold mb-1">Crash</h2>
         <p className="text-text-secondary text-sm">Cash out before it crashes!</p>
+        <p className="text-text-secondary text-xs mt-1">Balance: {balance.toFixed(2)} TON</p>
       </div>
+
+      {/* Balance Warning */}
+      {!hasEnoughBalance && hasBet && (
+        <div className="text-center p-2 rounded-lg bg-neon-red/10 border border-neon-red/30">
+          <p className="text-neon-red text-sm">Insufficient balance for next bet.</p>
+        </div>
+      )}
+
+      {/* Error */}
+      <AnimatePresence>
+        {(error || gameError) && !hasBet && (
+          <motion.div
+            className="text-center p-2 rounded-lg bg-neon-red/10 border border-neon-red/30"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+          >
+            <p className="text-neon-red text-sm">{error || gameError}</p>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Graph Display */}
       <Card className="relative overflow-hidden" glow={hasCrashed ? 'pink' : isRunning ? 'green' : 'none'}>
         <div className="h-64 flex items-end justify-center relative">
-          {/* Grid lines */}
           <div className="absolute inset-0 flex flex-col justify-between py-4 px-4">
             {[5, 4, 3, 2, 1].map((m) => (
               <div key={m} className="border-b border-white/5 flex items-center">
@@ -100,7 +165,6 @@ export default function CrashGame() {
             ))}
           </div>
 
-          {/* Graph line */}
           <svg className="absolute inset-0 w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none">
             <defs>
               <linearGradient id="graphGradient" x1="0%" y1="100%" x2="0%" y2="0%">
@@ -108,7 +172,7 @@ export default function CrashGame() {
                 <stop offset="100%" stopColor={hasCrashed ? '#EF4444' : '#10B981'} stopOpacity="0" />
               </linearGradient>
             </defs>
-            {isRunning || hasCrashed || multiplier > 1 ? (
+            {(isRunning || hasCrashed || multiplier > 1) && (
               <>
                 <path
                   d={`M 0 100 Q 50 ${100 - getGraphHeight()} 100 ${100 - getGraphHeight()}`}
@@ -121,10 +185,9 @@ export default function CrashGame() {
                   strokeWidth="0.5"
                 />
               </>
-            ) : null}
+            )}
           </svg>
 
-          {/* Multiplier display */}
           <div className="relative z-10 text-center">
             <motion.p
               className={`text-6xl font-black ${getMultiplierColor()}`}
@@ -134,20 +197,12 @@ export default function CrashGame() {
               {multiplier.toFixed(2)}x
             </motion.p>
             {hasCrashed && (
-              <motion.p
-                className="text-neon-red font-bold text-lg mt-2"
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-              >
+              <motion.p className="text-neon-red font-bold text-lg mt-2" initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
                 CRASHED!
               </motion.p>
             )}
             {cashedOut && cashOutMultiplier && (
-              <motion.p
-                className="text-neon-green font-bold text-lg mt-2"
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-              >
+              <motion.p className="text-neon-green font-bold text-lg mt-2" initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
                 Cashed out at {cashOutMultiplier.toFixed(2)}x!
               </motion.p>
             )}
@@ -155,7 +210,7 @@ export default function CrashGame() {
         </div>
       </Card>
 
-      {/* Bet Amount */}
+      {/* Bet Amount (only visible before game starts) */}
       {!hasBet && (
         <Card className="space-y-4">
           <p className="font-semibold text-center">Bet Amount</p>
@@ -164,27 +219,45 @@ export default function CrashGame() {
             <input
               type="number"
               value={betAmount}
-              onChange={(e) => setBetAmount(parseFloat(e.target.value) || 0)}
+              onChange={(e) => {
+                const val = parseFloat(e.target.value)
+                setBetAmount(isNaN(val) ? 0.01 : val)
+              }}
               className="w-24 bg-bg-tertiary rounded-lg px-3 py-2 text-center font-mono font-bold text-lg focus:outline-none focus:ring-2 focus:ring-neon-blue"
               min={0.01}
-              max={10}
               step={0.01}
             />
           </div>
           <div className="grid grid-cols-3 gap-2">
-            {quickBets.map((amount) => (
-              <Button
-                key={amount}
-                variant={betAmount === amount ? 'primary' : 'secondary'}
-                size="sm"
-                onClick={() => setBetAmount(amount)}
-              >
-                {amount}
-              </Button>
-            ))}
+            {quickBets.map((amount) => {
+              const isDisabled = balance < amount
+              return (
+                <Button key={amount} variant={betAmount === amount ? 'primary' : 'secondary'} size="sm" onClick={() => setBetAmount(Math.min(amount, balance))} disabled={isDisabled}>
+                  {amount}
+                </Button>
+              )
+            })}
           </div>
         </Card>
       )}
+
+      {/* Result Message */}
+      <AnimatePresence>
+        {(hasCrashed || cashedOut) && !isRunning && (
+          <motion.div className="text-center" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+            <p className={`text-xl font-bold ${hasWon ? 'text-neon-green' : 'text-neon-red'}`}>
+              {hasWon
+                ? `You won ${winnings.toFixed(2)} TON!`
+                : 'Crashed! Better luck next time.'}
+            </p>
+            {cashedOut && (
+              <p className="text-text-secondary text-sm mt-1">
+                New Balance: {balance.toFixed(2)} TON
+              </p>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Action Buttons */}
       {!hasBet ? (
@@ -192,16 +265,17 @@ export default function CrashGame() {
           variant="primary"
           size="lg"
           fullWidth
+          disabled={!canPlay || !hasEnoughBalance || isProcessing}
           onClick={startGame}
         >
-          Place Bet & Start
+          {isProcessing ? 'Processing...' : 'Place Bet & Start'}
         </Button>
       ) : isRunning && !cashedOut ? (
         <Button
           variant="gold"
           size="lg"
           fullWidth
-          onClick={cashOut}
+          onClick={handleCashOut}
           animate={{ scale: [1, 1.02, 1] }}
           transition={{ duration: 0.5, repeat: Infinity }}
         >
@@ -216,6 +290,9 @@ export default function CrashGame() {
             setHasBet(false)
             setMultiplier(1.0)
             setHasCrashed(false)
+            setHasWon(null)
+            setWinnings(0)
+            getBalance()
           }}
         >
           Play Again

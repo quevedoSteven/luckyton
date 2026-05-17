@@ -5,6 +5,22 @@ import { Link } from 'react-router-dom'
 import { hapticImpact } from '../../services/telegram'
 import { getWalletBalance } from '../../services/ton'
 
+interface UserSession {
+  id: string
+  walletAddress: string
+  username: string
+  balance: number
+  isPremium: boolean
+  level: number
+  totalGames: number
+  totalWins: number
+  totalLosses: number
+  winStreak: number
+  bestWinStreak: number
+  xp: number
+  createdAt: string
+}
+
 interface HeaderProps {
   showBalance?: boolean
 }
@@ -13,13 +29,56 @@ export default function Header({ showBalance = true }: HeaderProps) {
   const wallet = useTonWallet()
   const [tonConnectUI] = useTonConnectUI()
   const [showConnect, setShowConnect] = useState(false)
-  const [balance, setBalance] = useState(0)
+  const [headerBalance, setHeaderBalance] = useState(0)
+  const [lastUpdated, setLastUpdated] = useState(0)
+
+  const getUserFromStorage = (): UserSession | null => {
+    try {
+      const userStr = localStorage.getItem('luckyton_user')
+      if (userStr) return JSON.parse(userStr)
+      return null
+    } catch {
+      return null
+    }
+  }
+
+  const updateHeaderBalance = async () => {
+    const user = getUserFromStorage()
+    if (user?.balance !== undefined) {
+      setHeaderBalance(Number(user.balance))
+    } else if (wallet?.account?.address) {
+      try {
+        const onChainBalance = await getWalletBalance(wallet.account.address)
+        setHeaderBalance(onChainBalance)
+      } catch {
+        setHeaderBalance(0)
+      }
+    }
+  }
 
   useEffect(() => {
-    if (wallet?.account?.address) {
-      getWalletBalance(wallet.account.address).then(setBalance)
+    updateHeaderBalance()
+
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'luckyton_user') {
+        updateHeaderBalance()
+      }
     }
+
+    window.addEventListener('storage', handleStorageChange)
+    return () => window.removeEventListener('storage', handleStorageChange)
   }, [wallet?.account?.address])
+
+  const handleConnectToggle = () => {
+    setShowConnect(!showConnect)
+  }
+
+  const handleDisconnect = () => {
+    tonConnectUI.disconnect()
+    localStorage.removeItem('luckyton_user')
+    localStorage.removeItem('auth_token')
+    setHeaderBalance(0)
+  }
 
   return (
     <header className="safe-top bg-bg-secondary/80 backdrop-blur-xl border-b border-white/5 px-4 py-3">
@@ -44,7 +103,7 @@ export default function Header({ showBalance = true }: HeaderProps) {
               animate={{ opacity: 1, x: 0 }}
             >
               <span className="text-neon-blue font-mono font-semibold">
-                {balance.toFixed(2)}
+                {headerBalance.toFixed(2)}
               </span>
               <span className="text-text-secondary text-sm ml-1">TON</span>
             </motion.div>
@@ -58,7 +117,7 @@ export default function Header({ showBalance = true }: HeaderProps) {
                 </span>
               </div>
               <button
-                onClick={() => tonConnectUI.disconnect()}
+                onClick={handleDisconnect}
                 className="text-text-secondary text-xs hover:text-neon-red transition-colors"
               >
                 Disconnect
@@ -66,7 +125,7 @@ export default function Header({ showBalance = true }: HeaderProps) {
             </div>
           ) : (
             <button
-              onClick={() => setShowConnect(!showConnect)}
+              onClick={handleConnectToggle}
               className="px-4 py-2 rounded-full bg-gradient-to-r from-neon-blue to-neon-purple text-white text-sm font-semibold shadow-neon-blue btn-press"
             >
               Connect
