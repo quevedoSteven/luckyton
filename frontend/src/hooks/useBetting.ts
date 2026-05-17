@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react'
 import { useTonConnectUI, useTonWallet } from '@tonconnect/ui-react'
 import { toNano } from '@ton/ton'
-import { getWalletBalance } from './ton'
+import { getWalletBalance } from '../services/ton'
 
 const API_URL = import.meta.env.VITE_API_URL || 'https://luckyton-production.up.railway.app'
 
@@ -54,7 +54,7 @@ export function useBetting() {
       }
 
       const result = await tonConnectUI.sendTransaction(transaction)
-      const txHash = result.boc[0] || result.hash || ''
+      const txHash = result.boc[0] || ''
 
       // Step 3: Verify and get game result
       const verifyRes = await fetch(`${API_URL}/api/betting/verify/${sessionId}`, {
