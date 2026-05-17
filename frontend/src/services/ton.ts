@@ -1,5 +1,4 @@
 import { TonConnectUI } from '@tonconnect/ui-react'
-import { toNano, Address } from '@ton/ton'
 
 const TONCENTER_API = 'https://testnet.toncenter.com/api/v2/jsonRPC'
 
@@ -13,10 +12,19 @@ async function rpcCall(method: string, params: Record<string, unknown>) {
   return data.result
 }
 
+function parseAddress(address: string): string {
+  try {
+    const raw = address.replace(/^EQ/, '').replace(/^UQ/, '')
+    return 'EQ' + raw
+  } catch {
+    return address
+  }
+}
+
 export async function getWalletBalance(walletAddress: string): Promise<number> {
   try {
-    const address = Address.parse(walletAddress).toString({ bounceable: true, testOnly: true })
-    const result = await rpcCall('getAddressBalance', { address })
+    const addr = parseAddress(walletAddress)
+    const result = await rpcCall('getAddressBalance', { address: addr })
     return Number(result) / 1e9
   } catch (e) {
     console.error('Failed to fetch balance:', e)
@@ -37,6 +45,8 @@ export async function sendTONPayment(
   if (!tonConnectUI.connected) {
     throw new Error('Wallet not connected')
   }
+
+  const { toNano } = await import('@ton/ton')
 
   const transaction = {
     validUntil: Math.floor(Date.now() / 1000) + 600,
@@ -61,15 +71,6 @@ export async function sendTONPayment(
       throw new Error('Transaction cancelled by user')
     }
     throw error
-  }
-}
-
-export function formatAddress(address: string): string {
-  try {
-    const addr = Address.parse(address)
-    return addr.toString({ bounceable: true, testOnly: true })
-  } catch {
-    return address
   }
 }
 
