@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import Button from '../components/common/Button'
 import Card from '../components/common/Card'
+import { useBetting } from '../hooks/useBetting'
 import { hapticSuccess, hapticError } from '../services/telegram'
 
 type Choice = 'heads' | 'tails' | null
@@ -12,38 +13,47 @@ export default function CoinFlipGame() {
   const [isFlipping, setIsFlipping] = useState(false)
   const [result, setResult] = useState<'heads' | 'tails' | null>(null)
   const [hasWon, setHasWon] = useState<boolean | null>(null)
+  const [winnings, setWinnings] = useState(0)
 
-  const handleFlip = () => {
-    if (!choice || isFlipping) return
+  const { placeBet, isProcessing, error } = useBetting()
+
+  const handleFlip = async () => {
+    if (!choice || isFlipping || isProcessing) return
     setIsFlipping(true)
     setResult(null)
     setHasWon(null)
+    setWinnings(0)
 
-    setTimeout(() => {
-      const outcome = Math.random() < 0.5 ? 'heads' : 'tails'
+    const gameResult = await placeBet('coinflip', betAmount, choice)
+
+    if (gameResult) {
+      const outcome = gameResult.result.details.result
+      const won = gameResult.result.winner === 'player'
       setResult(outcome)
-      const won = outcome === choice
       setHasWon(won)
+      setWinnings(gameResult.winnings)
       if (won) hapticSuccess()
       else hapticError()
-      setIsFlipping(false)
-    }, 2000)
+    } else if (error) {
+      setHasWon(false)
+      hapticError()
+    }
+
+    setIsFlipping(false)
   }
 
   const quickBets = [0.01, 0.05, 0.1, 0.5, 1, 5]
 
   return (
     <div className="p-4 space-y-6">
-      {/* Game Title */}
       <div className="text-center">
         <h2 className="text-2xl font-bold mb-1">Coin Flip</h2>
         <p className="text-text-secondary text-sm">Pick a side, flip the coin</p>
       </div>
 
-      {/* Coin Animation */}
       <div className="flex justify-center py-8">
         <AnimatePresence mode="wait">
-          {isFlipping ? (
+          {isFlipping || isProcessing ? (
             <motion.div
               key="flipping"
               className="w-40 h-40 rounded-full bg-gradient-to-br from-neon-blue to-neon-purple flex items-center justify-center"
@@ -80,7 +90,6 @@ export default function CoinFlipGame() {
         </AnimatePresence>
       </div>
 
-      {/* Result Message */}
       <AnimatePresence>
         {result && !isFlipping && (
           <motion.div
@@ -88,12 +97,12 @@ export default function CoinFlipGame() {
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
           >
-            <p
-              className={`text-xl font-bold ${
-                hasWon ? 'text-neon-green' : 'text-neon-red'
-              }`}
-            >
-              {hasWon ? `You won ${(betAmount * 1.97).toFixed(2)} TON!` : 'Better luck next time!'}
+            <p className={`text-xl font-bold ${hasWon ? 'text-neon-green' : 'text-neon-red'}`}>
+              {hasWon
+                ? `You won ${winnings.toFixed(2)} TON!`
+                : error
+                ? `Error: ${error}`
+                : 'Better luck next time!'}
             </p>
             <p className="text-text-secondary text-sm mt-1">
               Result: {result === 'heads' ? '👑 Heads' : '🌙 Tails'}
@@ -102,7 +111,6 @@ export default function CoinFlipGame() {
         )}
       </AnimatePresence>
 
-      {/* Choice Selection */}
       <Card className="space-y-4">
         <p className="font-semibold text-center">Choose your side</p>
         <div className="grid grid-cols-2 gap-3">
@@ -123,7 +131,6 @@ export default function CoinFlipGame() {
         </div>
       </Card>
 
-      {/* Bet Amount */}
       <Card className="space-y-4">
         <p className="font-semibold text-center">Bet Amount</p>
         <div className="flex items-center justify-center gap-2">
@@ -150,39 +157,26 @@ export default function CoinFlipGame() {
             </Button>
           ))}
         </div>
-        <div className="flex gap-2">
-          <Button variant="secondary" size="sm" fullWidth onClick={() => setBetAmount(0.01)}>
-            Min
-          </Button>
-          <Button variant="secondary" size="sm" fullWidth onClick={() => setBetAmount(10)}>
-            Max
-          </Button>
-        </div>
       </Card>
 
-      {/* Potential Win */}
       <Card className="text-center">
         <p className="text-text-secondary text-sm">Potential Win</p>
         <p className="text-2xl font-bold text-neon-green">
           {(betAmount * 1.97).toFixed(2)} TON
         </p>
-        <p className="text-text-secondary text-xs mt-1">
-          House fee: 3%
-        </p>
+        <p className="text-text-secondary text-xs mt-1">House fee: 3%</p>
       </Card>
 
-      {/* Play Button */}
       <Button
         variant="primary"
         size="lg"
         fullWidth
-        disabled={!choice || isFlipping}
+        disabled={!choice || isFlipping || isProcessing}
         onClick={handleFlip}
       >
-        {isFlipping ? 'Flipping...' : 'Flip Coin'}
+        {isProcessing ? 'Processing...' : isFlipping ? 'Flipping...' : 'Flip Coin'}
       </Button>
 
-      {/* Provably Fair */}
       <div className="text-center">
         <button className="text-text-secondary text-xs hover:text-neon-blue transition-colors">
           🔐 Provably Fair — Verify this game

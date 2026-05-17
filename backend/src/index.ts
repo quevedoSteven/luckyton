@@ -9,6 +9,7 @@ import userRoutes from './api/users.js'
 import gameRoutes from './api/games.js'
 import leaderboardRoutes from './api/leaderboard.js'
 import premiumRoutes from './api/premium.js'
+import bettingRoutes from './api/betting.js'
 import { handleSocketConnection } from './socket/index.js'
 
 dotenv.config()
@@ -42,6 +43,7 @@ app.use('/api/users', userRoutes)
 app.use('/api/games', gameRoutes)
 app.use('/api/leaderboard', leaderboardRoutes)
 app.use('/api/premium', premiumRoutes)
+app.use('/api/betting', bettingRoutes)
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() })
