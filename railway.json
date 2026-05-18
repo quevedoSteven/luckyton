@@ -3,9 +3,9 @@
   "build": {
     "watchPatterns": [
       "/backend/src/**/*.ts",
+      "/backend/prisma/**",
       "/backend/package.json",
-      "/backend/.nvmrc",
-      "/backend/nixpacks.toml"
+      "/backend/.nvmrc"
     ]
   },
   "deploy": {
