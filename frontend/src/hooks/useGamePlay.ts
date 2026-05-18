@@ -19,12 +19,6 @@ export interface GameResult {
   betAmount: number
   winnings: number
   netProfit: number
-  newBalance?: any
-}
-
-interface GameError {
-  message: string
-  code?: string
 }
 
 async function ensureAuthed(walletAddress?: string): Promise<boolean> {
@@ -63,8 +57,6 @@ export function useGamePlay() {
       }
 
       const data = await api.betting.create(gameType, betAmount, choice)
-      const newBalance = data.newBalance !== undefined ? data.newBalance : (await getBalance() ?? 0)
-      setBalance(Number(newBalance))
       return {
         sessionId: data.sessionId,
         serverSeedHash: data.serverSeedHash,
@@ -77,7 +69,7 @@ export function useGamePlay() {
     } finally {
       setIsProcessing(false)
     }
-  }, [setBalance, getBalance])
+  }, [])
 
   const playGame = useCallback(async (gameType: string, betAmount: number, choice?: string | number, walletAddress?: string): Promise<GameResult | null> => {
     setIsProcessing(true)
@@ -91,15 +83,8 @@ export function useGamePlay() {
       }
 
       const createData = await api.betting.create(gameType, betAmount, choice)
-      if (createData?.newBalance !== undefined) {
-        setBalance(Number(createData.newBalance))
-      } else {
-        await getBalance()
-      }
 
       const resultData = await api.betting.result(createData.sessionId)
-      const newBalance = resultData.newBalance !== undefined ? Number(resultData.newBalance) : (await getBalance() ?? 0)
-      setBalance(newBalance)
       setLastResult(resultData)
       return resultData
     } catch (err: any) {
@@ -109,20 +94,18 @@ export function useGamePlay() {
     } finally {
       setIsProcessing(false)
     }
-  }, [setBalance, getBalance])
+  }, [])
 
   const getResult = useCallback(async (sessionId: string): Promise<GameResult | null> => {
     try {
       const data = await api.betting.result(sessionId)
-      const newBalance = data.newBalance !== undefined ? Number(data.newBalance) : (await getBalance() ?? 0)
-      setBalance(newBalance)
       setLastResult(data)
       return data
     } catch (err: any) {
       setError(err?.message || 'Failed to get result')
       return null
     }
-  }, [setBalance, getBalance])
+  }, [])
 
   return {
     createSession,

@@ -21,18 +21,27 @@ export function isAuthenticating(): boolean {
   return authPromise !== null
 }
 
-export async function authenticate(walletAddress: string): Promise<string | null> {
+export async function authenticate(
+  walletAddress: string,
+  proof?: any,
+  connectEvent?: any
+): Promise<string | null> {
   if (authPromise) return authPromise
 
   authPromise = (async () => {
     try {
+      const body: Record<string, any> = { walletAddress }
+      if (proof) body.proof = proof
+      if (connectEvent) body.connectEvent = connectEvent
+
       const res = await fetch(`${API_URL}/api/auth/verify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ walletAddress }),
+        body: JSON.stringify(body),
       })
       if (!res.ok) {
-        console.error('Auth failed:', res.status, await res.text().catch(() => ''))
+        const errText = await res.text().catch(() => '')
+        console.error('Auth failed:', res.status, errText)
         return null
       }
       const data = await res.json()
@@ -112,10 +121,10 @@ async function request<T>(endpoint: string, options?: RequestInit): Promise<T> {
 
 export const api = {
   auth: {
-    verify: (walletAddress: string, signature: string) =>
+    verify: (walletAddress: string, signature: string, proof?: any) =>
       request<{ token: string; user: any }>('/api/auth/verify', {
         method: 'POST',
-        body: JSON.stringify({ walletAddress, signature }),
+        body: JSON.stringify({ walletAddress, signature, proof }),
       }),
   },
 
@@ -137,16 +146,16 @@ export const api = {
         serverSeedHash: string
         clientSeed: string
         message: string
-        newBalance?: number
       }>('/api/betting/create', {
         method: 'POST',
         body: JSON.stringify({ gameType, betAmount, choice }),
       }),
 
     result: (sessionId: string) =>
-      request<{ sessionId: string; result: any; betAmount: number; winnings: number; netProfit: number; newBalance?: any }>(`/api/betting/result/${sessionId}`, {
-        method: 'POST',
-      }),
+      request<{ sessionId: string; result: any; betAmount: number; winnings: number; netProfit: number }>(
+        `/api/betting/result/${sessionId}`,
+        { method: 'POST' }
+      ),
 
     getBalance: () => request<{ balance: number }>('/api/betting/balance'),
   },

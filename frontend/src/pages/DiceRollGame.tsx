@@ -93,10 +93,7 @@ export default function DiceRollGame() {
 
           setIsRolling(false)
 
-          // Update balance after result comes back
-          if (lastResult) {
-            setBalance(lastResult.newBalance)
-          }
+          getWalletBalance(wallet!.account!.address).then(setBalance).catch(() => {})
         }, 1500)
 
         setAnimationTimer(timer)
@@ -273,7 +270,7 @@ export default function DiceRollGame() {
                 : 'House wins this round!'}
             </p>
             <p className="text-text-secondary text-sm mt-1">
-              New Balance: {Number(lastResult.newBalance).toFixed(2)} TON
+              New Balance: {balance.toFixed(2)} TON
             </p>
           </motion.div>
         )}

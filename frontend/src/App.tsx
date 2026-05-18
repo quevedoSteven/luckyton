@@ -18,13 +18,16 @@ function App() {
   const wallet = useTonWallet()
 
   useEffect(() => {
-    if (wallet?.account?.address) {
+    if (wallet?.account?.address && wallet.connectItems?.tonProof) {
+      const proof = wallet.connectItems.tonProof
+      authenticate(wallet.account.address, proof)
+    } else if (wallet?.account?.address) {
       authenticate(wallet.account.address)
     } else {
       setAuthToken(null)
       localStorage.removeItem('luckyton_user')
     }
-  }, [wallet?.account?.address])
+  }, [wallet?.account?.address, wallet?.connectItems?.tonProof])
 
   return (
     <div className="h-full w-full bg-bg-primary gradient-bg relative">

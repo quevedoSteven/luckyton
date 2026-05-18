@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react'
 import { useTonConnectUI, useTonWallet } from '@tonconnect/ui-react'
 import { getWalletBalance } from '../services/ton'
+import { api, getAuthToken, authenticate } from '../services/api'
 
 function toNano(amount: number): string {
   return BigInt(Math.floor(amount * 1e9)).toString()
@@ -28,14 +29,25 @@ export function useBetting() {
     setError(null)
 
     try {
+      const token = getAuthToken()
+      if (!token) {
+        const newToken = await authenticate(wallet.account.address)
+        if (!newToken) {
+          setError('Authentication failed')
+          return null
+        }
+      }
+
       const createRes = await fetch(`${API_URL}/api/betting/create`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${getAuthToken()}`,
+        },
         body: JSON.stringify({
           gameType,
           betAmount,
           choice,
-          playerWallet: wallet.account.address,
         }),
       })
 
@@ -44,24 +56,27 @@ export function useBetting() {
         throw new Error(`Failed to create bet: ${createRes.status} ${errText}`)
       }
 
-      const { sessionId, paymentRequest } = await createRes.json()
+      const { sessionId } = await createRes.json()
 
       const transaction = {
-        validUntil: paymentRequest.validUntil,
+        validUntil: Math.floor(Date.now() / 1000) + 600,
         messages: [
           {
-            address: paymentRequest.recipient,
-            amount: toNano(paymentRequest.amount).toString(),
+            address: import.meta.env.VITE_HOUSE_WALLET || '0:ba0440e34b26e89304678b69d9a199a2d53aa3689513e9730a979997a86daa89',
+            amount: toNano(betAmount),
           },
         ],
       }
 
-      const result = await tonConnectUI.sendTransaction(transaction)
-      const txHash = result.boc[0] || ''
+      const txResult = await tonConnectUI.sendTransaction(transaction)
+      const txHash = txResult.boc[0] || ''
 
       const verifyRes = await fetch(`${API_URL}/api/betting/verify/${sessionId}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${getAuthToken()}`,
+        },
         body: JSON.stringify({ txHash }),
       })
 
@@ -72,7 +87,7 @@ export function useBetting() {
 
       const gameResult = await verifyRes.json()
 
-      getWalletBalance(wallet.account.address)
+      getWalletBalance(wallet.account.address).catch(() => {})
 
       return gameResult
     } catch (err: any) {

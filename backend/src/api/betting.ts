@@ -1,9 +1,15 @@
-import { Router } from 'express'
+import { Router, Request } from 'express'
 import { authMiddleware } from '../middleware/auth.js'
 import prisma from '../db/index.js'
 import { generateDiceRoll, generateCoinFlip, createProvablyFairData } from '../engine/provably-fair.js'
+import { verifyPayment, sendWinnings } from '../engine/betting.js'
 
 const router = Router()
+
+function getParam(req: Request, key: string): string {
+  const val = req.params[key]
+  return Array.isArray(val) ? val[0] : val
+}
 
 interface BetSession {
   id: string
@@ -13,7 +19,8 @@ interface BetSession {
   userId: string
   walletAddress: string
   provablyFair: ReturnType<typeof createProvablyFairData>
-  status: 'pending' | 'completed'
+  status: 'pending' | 'paid' | 'completed'
+  txHash?: string
   createdAt: Date
 }
 
@@ -34,7 +41,7 @@ async function processBet(session: BetSession): Promise<any> {
         gameType: 'dice',
         winner: isWin ? ('player' as const) : ('house' as const),
         multiplier: isWin ? multiplier : 0,
-        details: { playerRoll, houseRoll, isWin, houseEdge, sessionId: session.id }
+        details: { playerRoll, houseRoll, isWin, houseEdge, sessionId: session.id },
       }
     }
 
@@ -48,7 +55,7 @@ async function processBet(session: BetSession): Promise<any> {
         gameType: 'coinflip',
         winner: isWin ? ('player' as const) : ('house' as const),
         multiplier: isWin ? multiplier : 0,
-        details: { result, choice: session.choice, isWin, houseEdge, sessionId: session.id }
+        details: { result, choice: session.choice, isWin, houseEdge, sessionId: session.id },
       }
     }
 
@@ -90,16 +97,13 @@ router.post('/create', authMiddleware, async (req, res) => {
       createdAt: new Date(),
     }
 
-    // Note: Balance is checked on frontend via on-chain wallet balance
-    // Payment happens via TON Connect on frontend
-
     sessions.set(id, session)
 
     res.json({
       sessionId: id,
       serverSeedHash: provablyFair.serverSeedHash,
       clientSeed: provablyFair.clientSeed,
-      message: `${betAmount} TON deducted from balance. Good luck!`,
+      message: `Send ${betAmount} TON to house wallet to place your bet.`,
     })
   } catch (error) {
     console.error('Create bet error:', error)
@@ -107,12 +111,17 @@ router.post('/create', authMiddleware, async (req, res) => {
   }
 })
 
-router.post('/result/:sessionId', authMiddleware, async (req, res) => {
+router.post('/verify/:sessionId', authMiddleware, async (req, res) => {
   try {
-    const { sessionId } = req.params
+    const sessionId = getParam(req, 'sessionId')
+    const { txHash } = req.body
     const userId = (req as any).userId
 
-    const session = sessions.get(String(sessionId))
+    if (!txHash) {
+      return res.status(400).json({ message: 'Transaction hash required' })
+    }
+
+    const session = sessions.get(sessionId)
     if (!session) {
       return res.status(404).json({ message: 'Session not found' })
     }
@@ -125,22 +134,35 @@ router.post('/result/:sessionId', authMiddleware, async (req, res) => {
       return res.status(400).json({ message: 'Session already processed' })
     }
 
+    if (session.status === 'paid') {
+      return res.status(400).json({ message: 'Payment already verified for this session' })
+    }
+
+    const game = await verifyPayment(sessionId, txHash, session.betAmount, session.walletAddress)
+    if (!game) {
+      return res.status(400).json({ message: 'Payment verification failed. Transaction not found or amount mismatch.' })
+    }
+
+    session.status = 'paid'
+    session.txHash = txHash
+
     const result = await processBet(session)
     session.status = 'completed'
 
     let winnings = 0
     if (result.winner === 'player') {
       winnings = session.betAmount * result.multiplier
-      // Track stats only - balance is managed on-chain
       await prisma.user.update({
         where: { id: userId },
         data: {
           totalWins: { increment: 1 },
           winStreak: { increment: 1 },
           totalGames: { increment: 1 },
-          xp: { increment: 10 }
-        }
+          xp: { increment: 10 },
+        },
       })
+
+      await sendWinnings(session.walletAddress, winnings, sessionId)
     } else {
       await prisma.user.update({
         where: { id: userId },
@@ -148,13 +170,78 @@ router.post('/result/:sessionId', authMiddleware, async (req, res) => {
           totalLosses: { increment: 1 },
           winStreak: 0,
           totalGames: { increment: 1 },
-          xp: { increment: 1 }
-        }
+          xp: { increment: 1 },
+        },
       })
     }
 
-    // Clean up session
-    sessions.delete(String(sessionId))
+    sessions.delete(sessionId)
+
+    res.json({
+      sessionId,
+      result,
+      betAmount: session.betAmount,
+      winnings,
+      netProfit: result.winner === 'player' ? winnings - session.betAmount : -session.betAmount,
+    })
+  } catch (error) {
+    console.error('Verify payment error:', error)
+    res.status(500).json({ message: 'Failed to verify payment' })
+  }
+})
+
+router.post('/result/:sessionId', authMiddleware, async (req, res) => {
+  try {
+    const sessionId = getParam(req, 'sessionId')
+    const userId = (req as any).userId
+
+    const session = sessions.get(sessionId)
+    if (!session) {
+      return res.status(404).json({ message: 'Session not found' })
+    }
+
+    if (session.userId !== userId) {
+      return res.status(403).json({ message: 'Not authorized for this session' })
+    }
+
+    if (session.status === 'completed') {
+      return res.status(400).json({ message: 'Session already processed' })
+    }
+
+    if (session.status !== 'paid') {
+      return res.status(400).json({ message: 'Payment not yet verified for this session' })
+    }
+
+    const result = await processBet(session)
+    session.status = 'completed'
+
+    let winnings = 0
+    if (result.winner === 'player') {
+      winnings = session.betAmount * result.multiplier
+      await prisma.user.update({
+        where: { id: userId },
+        data: {
+          totalWins: { increment: 1 },
+          winStreak: { increment: 1 },
+          totalGames: { increment: 1 },
+          xp: { increment: 10 },
+        },
+      })
+
+      await sendWinnings(session.walletAddress, winnings, sessionId)
+    } else {
+      await prisma.user.update({
+        where: { id: userId },
+        data: {
+          totalLosses: { increment: 1 },
+          winStreak: 0,
+          totalGames: { increment: 1 },
+          xp: { increment: 1 },
+        },
+      })
+    }
+
+    sessions.delete(sessionId)
 
     res.json({
       sessionId,
@@ -174,7 +261,7 @@ router.get('/balance', authMiddleware, async (req, res) => {
     const userId = (req as any).userId
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      select: { balance: true }
+      select: { balance: true },
     })
     res.json({ balance: Number(user?.balance || 0) })
   } catch (error) {

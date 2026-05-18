@@ -6,6 +6,10 @@ export interface AuthenticatedRequest extends Request {
   walletAddress?: string
 }
 
+function getJwtSecret(): string {
+  return process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production'
+}
+
 export function authMiddleware(req: AuthenticatedRequest, res: Response, next: NextFunction) {
   try {
     const authHeader = req.headers.authorization
@@ -18,7 +22,7 @@ export function authMiddleware(req: AuthenticatedRequest, res: Response, next: N
       return res.status(401).json({ message: 'Token missing' })
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret') as {
+    const decoded = jwt.verify(token, getJwtSecret()) as {
       walletAddress: string
       id: string
     }

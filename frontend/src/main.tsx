@@ -6,8 +6,8 @@ import App from './App'
 import './styles/globals.css'
 import { initTelegram } from './services/telegram'
 
-const MANIFEST_URL = 'https://luckyton.vercel.app/tonconnect-manifest.json'
-const TG_BOT_URL = 'https://t.me/your_bot'
+const MANIFEST_URL: `${string}://${string}` = (import.meta.env.VITE_TONCONNECT_MANIFEST_URL as any) || 'https://luckyton.vercel.app/tonconnect-manifest.json'
+const TG_BOT_URL: `${string}://${string}` = (import.meta.env.VITE_TG_BOT_URL as any) || 'https://t.me/luckyton_bot'
 
 initTelegram()
 
