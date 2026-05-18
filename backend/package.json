@@ -12,7 +12,6 @@
     "db:seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
-    "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
     "@ton/core": "^0.63.1",
     "@ton/ton": "^16.2.4",
@@ -26,6 +25,9 @@
     "socket.io": "^4.8.1",
     "tonweb": "^0.0.66",
     "zod": "^3.24.1"
+  },
+  "engines": {
+    "node": ">=20.19.0"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",
