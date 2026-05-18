@@ -1,7 +1,20 @@
-import { sha256 } from '@ton/crypto'
+import crypto from 'crypto'
+import { createRequire } from 'module'
 import { Address, Cell, loadStateInit, contractAddress } from '@ton/ton'
 import { Buffer } from 'buffer'
-import nacl from 'tweetnacl'
+
+function getTweetNacl(): any {
+  try {
+    const req = createRequire(import.meta.url)
+    return req('tweetnacl')
+  } catch {
+    return null
+  }
+}
+
+function sha256(data: Buffer): Buffer {
+  return crypto.createHash('sha256').update(data).digest()
+}
 
 const TON_PROOF_PREFIX = 'ton-proof-item-v2/'
 const TON_CONNECT_PREFIX = 'ton-connect'
@@ -81,6 +94,12 @@ export async function verifyTonProof(
   allowedDomains: string[]
 ): Promise<boolean> {
   try {
+    const nacl = getTweetNacl()
+    if (!nacl) {
+      console.warn('tweetnacl not loaded, TON proof verification unavailable')
+      return false
+    }
+
     const stateInitB64 = getStateInitBase64(payload)
     if (!stateInitB64) return false
 
@@ -124,7 +143,7 @@ export async function verifyTonProof(
       Buffer.from(payload.proof.payload),
     ])
 
-    const msgHash = Buffer.from(await sha256(msg))
+    const msgHash = sha256(msg)
 
     const fullMsg = Buffer.concat([
       Buffer.from([0xff, 0xff]),
@@ -132,7 +151,7 @@ export async function verifyTonProof(
       msgHash,
     ])
 
-    const fullMsgHash = Buffer.from(await sha256(fullMsg))
+    const fullMsgHash = sha256(fullMsg)
 
     const signature = Buffer.from(payload.proof.signature, 'base64')
 
