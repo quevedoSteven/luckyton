@@ -1,0 +1,15 @@
+{
+  "$schema": "https://railway.app/railway.schema.json",
+  "build": {
+    "watchPatterns": [
+      "/backend/src/**/*.ts",
+      "/backend/package.json",
+      "/backend/.nvmrc",
+      "/backend/nixpacks.toml"
+    ]
+  },
+  "deploy": {
+    "healthcheckPath": "/health",
+    "healthcheckTimeout": 10
+  }
+}
