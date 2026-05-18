@@ -49,7 +49,11 @@ app.use('/api/premium', premiumRoutes)
 app.use('/api/betting', bettingRoutes)
 
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() })
+  res.json({
+    status: 'ok',
+    node: process.version,
+    timestamp: new Date().toISOString(),
+  })
 })
 
 handleSocketConnection(io)
