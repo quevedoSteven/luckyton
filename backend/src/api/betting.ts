@@ -183,6 +183,7 @@ router.post('/result/:sessionId', authMiddleware, async (req, res) => {
       await prisma.user.update({
         where: { id: userId },
         data: {
+          balance: { increment: winnings },
           totalWins: { increment: 1 },
           winStreak: { increment: 1 },
           totalGames: { increment: 1 },
@@ -195,6 +196,7 @@ router.post('/result/:sessionId', authMiddleware, async (req, res) => {
       await prisma.user.update({
         where: { id: userId },
         data: {
+          balance: { decrement: session.betAmount },
           totalLosses: { increment: 1 },
           winStreak: 0,
           totalGames: { increment: 1 },
