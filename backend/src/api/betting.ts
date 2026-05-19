@@ -174,10 +174,6 @@ router.post('/result/:sessionId', authMiddleware, async (req, res) => {
       return res.status(400).json({ message: 'Session already processed' })
     }
 
-    if (session.status !== 'paid') {
-      return res.status(400).json({ message: 'Payment not yet verified for this session' })
-    }
-
     const result = await processBet(session)
     session.status = 'completed'
 
