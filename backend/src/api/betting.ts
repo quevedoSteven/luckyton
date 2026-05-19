@@ -146,43 +146,9 @@ router.post('/verify/:sessionId', authMiddleware, async (req, res) => {
     session.status = 'paid'
     session.txHash = txHash
 
-    const result = await processBet(session)
-    session.status = 'completed'
-
-    let winnings = 0
-    if (result.winner === 'player') {
-      winnings = session.betAmount * result.multiplier
-      await prisma.user.update({
-        where: { id: userId },
-        data: {
-          totalWins: { increment: 1 },
-          winStreak: { increment: 1 },
-          totalGames: { increment: 1 },
-          xp: { increment: 10 },
-        },
-      })
-
-      await sendWinnings(session.walletAddress, winnings, sessionId)
-    } else {
-      await prisma.user.update({
-        where: { id: userId },
-        data: {
-          totalLosses: { increment: 1 },
-          winStreak: 0,
-          totalGames: { increment: 1 },
-          xp: { increment: 1 },
-        },
-      })
-    }
-
-    sessions.delete(sessionId)
-
     res.json({
       sessionId,
-      result,
-      betAmount: session.betAmount,
-      winnings,
-      netProfit: result.winner === 'player' ? winnings - session.betAmount : -session.betAmount,
+      message: 'Payment verified. You can now get the result.',
     })
   } catch (error) {
     console.error('Verify payment error:', error)
